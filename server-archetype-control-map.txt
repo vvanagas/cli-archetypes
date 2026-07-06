@@ -1,0 +1,893 @@
+version: 0.9
+kind: archetype_control_map
+
+# PUBLICATION NOTE (draft): this map and server-controls.txt (sibling) are
+# published together with the CLI trio. Cross-references to
+# server-corpus-open-issues.txt (the maintainers' falsification ledger),
+# server-web-archetype-fusions.txt / server-async-archetype-fusions.txt
+# (the web/async seam layers), and the client corpus (CL* ids) are not yet
+# published and are forward references.
+
+# CHANGES FROM v0.8
+#
+# Semantic-audit fixes (assignment correctness, not referential integrity):
+#  - C21 (scoped-query) ADDED to http_command, conditional on
+#    tenant_or_user_scope — matches http_crud; closes the IDOR-on-write /
+#    mutation_by_id_without_scope_predicate gap on the write archetype.
+#  - C31 (inbound-load-bound) PROMOTED to default on upload_streaming — the
+#    size-cap-before-buffering / disk-exhaustion guard is near-universal for
+#    uploads; gating it on the judgment predicate untrusted_or_public let the
+#    authenticated-internal path skip the cap. Floor still drops it for
+#    transfers bounded by construction.
+#  - C02 (thin-handler) ADDED to realtime_channel default — every other web
+#    archetype carries it; per-frame dispatch is C02 territory. Prior omission.
+#  - C04 (result-error-union) PROMOTED to default on bff_aggregator — partial
+#    failure is the archetype's defining property; C43 stays under
+#    partial_failure_policy.
+#  - C01 (schema-at-boundary) PROMOTED to default on scheduled_job — C41
+#    (default) already declares the config trust boundary that invokes C01;
+#    conditional C01 contradicted that.
+#  - C04 PAIRING RULE recorded (rule.control_pairing) and applied: C04 added
+#    as default to http_crud, upload_streaming, realtime_channel. query_read_model
+#    LEFT conditional (reads do not always present 2+ recoverable outcomes).
+#    Borderline cases (webhook_receiver, cli_transformer) deferred — see
+#    server-corpus-open-issues.txt OI-01.
+#
+# All other semantic-audit findings (trigger rewording, C11-on-auth_token,
+# C06/C07 asymmetry, C44/C03 minor gaps, C57 narration desync, master-doc
+# staleness) are OUTSTANDING in server-corpus-open-issues.txt.
+
+# CHANGES FROM v0.7
+#
+# Internal file references updated to the server- prefixed names after the
+# server/client corpus split: controls.txt -> server-controls.txt (floor_drop
+# rule), web-archetype-fusions.txt -> server-web-archetype-fusions.txt
+# (realtime_channel note). No archetype, default, conditional, or forbidden
+# attachment changed.
+
+# CHANGES FROM v0.6
+#
+# Wired catalog v0.7 (C35-C58 review: 19 promoted; C36/C39/C46/C52 merged
+# into C08+C10 / C05 / C31 / C28; C45 rejected — see catalog changelog).
+# No archetype added or removed: every promoted control was reproducible as
+# a default or conditional on existing cards, which is the inclusion rule
+# working as intended.
+#
+# SPREAD CONDITIONALS (the C25/C31 precedent — near-universal triggers
+# repeated per card rather than implied globally, so resolve.ts stays dumb):
+#  - emits_dimensional_metrics -> C55 on every web card, async_job_worker,
+#    scheduled_job, cli_daemon. Cardinality is a one-line mistake anywhere
+#    metrics are emitted; the floor drops it for stdout dev logging.
+#  - health_probed_by_orchestrator_or_lb -> C35 + C48 on web cards and
+#    async_job_worker; cli_daemon gets them under its existing
+#    exposes_network_endpoint trigger.
+#  - boot_requires_env_config_or_secrets -> C41 on web cards. C41 + C47 are
+#    DEFAULT on async_job_worker, scheduled_job, cli_daemon — a long-lived
+#    process definitionally boots from config; C47's floor drops the
+#    flag-service case.
+#
+# TARGETED ATTACHMENTS:
+#  - C37 (tombstone deletes): conditional on http_command, http_crud,
+#    async_job_worker (delete_releases_external_resources).
+#  - C38 (mass assignment): conditional on http_crud and http_command
+#    (entity_mixes_user_and_system_fields).
+#  - C40 (reconciliation): conditional on async_job_worker and scheduled_job
+#    (mirrors_external_durable_state). The sweep itself classifies as
+#    scheduled_job. NOTE added to webhook_receiver: webhooks are hints; if
+#    the receiver maintains a local mirror, the C40 sweep is a separate
+#    scheduled_job, not this card's obligation.
+#  - C42 (stampede): new trigger on query_read_model; appended to
+#    bff_aggregator's real_store_cache.
+#  - C43 (fail-open/closed): conditional on http_command and webhook-free
+#    gates; appended to auth_token's external_identity_provider (its floor
+#    closes the case where the IdP is the domain) and bff_aggregator's
+#    partial_failure_policy.
+#  - C44 (monotonic time): conditional on async_job_worker, scheduled_job,
+#    realtime_channel, cli_daemon (computes_durations_or_ttls).
+#  - C49 (stale cursor): conditional on async_job_worker, scheduled_job,
+#    cli_daemon (resumes_from_stored_cursor_or_offset). The CLIENT half of
+#    this mode is CL14's resync obligation in the client corpus.
+#  - C50 (dry-run): conditional on http_command only
+#    (client_needs_side_effect_free_validation). Nowhere else — the cost
+#    profile makes promiscuous attachment over-engineering by default.
+#  - C51 (hysteresis): conditional on scheduled_job and cli_daemon
+#    (adjusts_capacity_or_limits_from_signals). Thin recurrence; narrow home.
+#  - C53 (priority tiers): conditional on async_job_worker
+#    (mixed_criticality_share_one_queue).
+#  - C54 (pinned artifacts): conditional on async_job_worker, scheduled_job,
+#    cli_orchestrator, cli_stateful (stores_external_artifact_references).
+#  - C56 (cancellation): conditional on query_read_model, http_command,
+#    bff_aggregator, upload_streaming
+#    (long_downstream_io_with_cancellable_caller).
+#  - C57 (temp-file cleanup): conditional on upload_streaming (whose note
+#    already legitimizes tmp staging), async_job_worker, cli_transformer,
+#    cli_daemon (stages_bytes_to_local_disk).
+#  - C58 (driver-level bound): conditional on async_job_worker,
+#    scheduled_job, cli_stateful (query_over_unbounded_collection). It
+#    attaches OFF the HTTP edge only: C23 owns the envelope, and its max
+#    limit compiling down to the driver is now a C23 required item, so list
+#    endpoints hit C58's floor.
+#
+# FORBIDDEN ADDITIONS:
+#  - C56 FORBIDDEN on async_job_worker: work that must outlive its requester
+#    is the TIME seam's defining property; honoring requester cancellation
+#    mid-message fights at-least-once delivery. Same tripwire grammar as
+#    C32's forbidden on this card.
+#
+# NOT ATTACHED ANYWHERE: C45 (rejected from the catalog — deployment
+# topology, not a code obligation). C36/C39/C46/C52 have no IDs to attach.
+
+# CHANGES FROM v0.5 (retained)
+#  - realtime_channel and scheduled_job added; http_passthrough demoted to a
+#    note on bff_aggregator; cli_wrapper + cli_status_checker merged into
+#    cli_invoker; upload_streaming narrowed; attachment and forbidden-list
+#    audits; async companion wired (correlates_messages_across_time,
+#    orchestrates_multi_step_saga). Full history in v0.6 of this file.
+
+rule:
+  default: Attach by archetype unless dropped by the control's floor or excluded by the task.
+  conditional: Attach only if the named trigger is present in the change.
+  floor_drop: Even when attached, drop a control if its `floor` (server-controls.txt) holds.
+  control_pairing:
+    C04_with_C05: >
+      Attach C04 (typed Result union) wherever the caller distinguishes two or
+      more RECOVERABLE outcomes, paired with C05's boundary mapping. A single
+      success/terminal-failure shape does not earn C04; exit-code-shaped CLIs
+      (C05 + C13) and thin boundary handlers may satisfy the distinction via
+      C05 alone — recorded per archetype, never assumed.
+  forbidden_by_default: Do not attach. If genuinely needed, the archetype is
+    probably misdiagnosed — reclassify; otherwise record an explicit justification.
+  exception_policy:
+    forbidden_control_used_without_record: gate_error
+    accepted_forms:
+      - reclassify_to_an_archetype_whose_default_or_conditional_includes_it
+      - record_justification_referencing_the_specific_trigger_and_mode
+  archetype_inclusion:
+    meaning: >
+      An archetype is expensive — it multiplies the map, the fusion
+      combinatorics, and the classification step every change passes through.
+      A control earns inclusion by recurrence alone; an archetype must pass
+      BOTH conditions.
+    conditions:
+      recurrence: seen more than twice in real systems, same bar as controls
+      irreducibility: >
+        the candidate's default control set is NOT reproducible as conditional
+        triggers on an existing archetype without distorting that archetype's
+        meaning ("fails in a way nothing else does", made mechanical)
+    outcomes:
+      - promote_new_archetype          # both conditions pass
+      - add_conditional_to_existing    # recurrent but reducible
+      - reject_or_route_to_human       # unique but rare, or neither
+
+web_archetypes:
+  http_crud:
+    meaning: store/retrieve resource shape; no command invariants
+    default:
+      - C01
+      - C02
+      - C04   # >=2 recoverable outcomes (not-found / conflict / validation); pairs with C05
+      - C05
+      - C16
+      - C18
+      - C26
+    conditional:
+      list_endpoint:
+        - C23
+      tenant_or_user_scope:
+        - C21
+      owned_resource_mutation:
+        - C15
+      query_params_control_SQL:
+        - C22
+      related_data:
+        - C24
+      correctness_depends_on_real_SQL_or_constraints:
+        - C19
+      external_IO:
+        - C06
+        - C17
+      retryable_mutation:
+        - C08
+        - C07
+      handles_secret_token_or_credential:
+        - C25
+      publicly_reachable_or_abuse_plausible:
+        - C31
+      entity_mixes_user_and_system_fields:
+        - C38
+      delete_releases_external_resources:
+        - C37
+      health_probed_by_orchestrator_or_lb:
+        - C35
+        - C48
+      emits_dimensional_metrics:
+        - C55
+      boot_requires_env_config_or_secrets:
+        - C41
+    forbidden_by_default:
+      - C10
+      - C11
+      - C20
+      - C33
+
+  query_read_model:
+    meaning: filtered/sorted/paged read; no mutation
+    default:
+      - C01
+      - C02
+      - C05
+      - C16
+      - C18
+      - C21
+      - C22
+      - C23
+      - C26
+    conditional:
+      related_or_derived_data:
+        - C24
+      external_read_sources:
+        - C06
+        - C17
+      correctness_depends_on_SQL_views_indexes_or_constraints:
+        - C19
+      recoverable_read_errors_need_branching:
+        - C04
+      cache_or_downstream_retry:
+        - C07
+      expensive_cached_read_with_concurrent_misses:
+        - C42   # the thundering herd on key expiry; per-process single-flight
+      long_downstream_io_with_cancellable_caller:
+        - C56   # expensive search + bored user refreshing = orphaned queries
+      handles_secret_token_or_credential:
+        - C25
+      publicly_reachable_or_abuse_plausible:
+        - C31
+      health_probed_by_orchestrator_or_lb:
+        - C35
+        - C48
+      emits_dimensional_metrics:
+        - C55
+      boot_requires_env_config_or_secrets:
+        - C41
+    forbidden_by_default:
+      - C08
+      - C09
+      - C10
+      - C11
+      - C15
+      - C20
+      - C33
+
+  http_command:
+    meaning: state mutation with invariants, concurrency, or idempotency risk
+    default:
+      - C01
+      - C02
+      - C03
+      - C04
+      - C05
+      - C08
+      - C09
+      - C10
+      - C15
+      - C16
+      - C17
+      - C18
+      - C19
+      - C20
+      - C26
+    conditional:
+      tenant_or_user_scope:
+        - C21   # scope predicate on the UPDATE/DELETE WHERE — defense-in-depth
+                # under C15; closes mutation_by_id_without_scope_predicate
+      external_call_after_DB_change:
+        - C11
+      server_retry_needed:
+        - C07
+      external_IO:
+        - C06
+      delete_releases_external_resources:
+        - C37   # tombstone + async teardown; C11's twin for deletes
+      entity_mixes_user_and_system_fields:
+        - C38
+      synchronous_third_party_gate:
+        - C43   # fraud check, policy service — the fallback is a declared decision
+      client_needs_side_effect_free_validation:
+        - C50   # opt-in only; takes real locks, so C31 rides along
+      long_downstream_io_with_cancellable_caller:
+        - C56   # honored up to the tx point of no return — see the card
+      handles_secret_token_or_credential:
+        - C25
+      publicly_reachable_or_abuse_plausible:
+        - C31
+      health_probed_by_orchestrator_or_lb:
+        - C35
+        - C48
+      emits_dimensional_metrics:
+        - C55
+      boot_requires_env_config_or_secrets:
+        - C41
+    forbidden_by_default:
+      - C32   # advisory lock to serialize requests is the recurring misreach;
+              # the correct answer is C10 (row lock) or C08 (idempotency)
+      - C33   # a local state file from a request handler belongs in the
+              # store (C19) or object storage; local state breaks scale-out
+
+  auth_token:
+    meaning: prove identity and issue credential/session/token
+    default:
+      - C01
+      - C02
+      - C03
+      - C04
+      - C05
+      - C06
+      - C16
+      - C18
+      - C19
+      - C25
+      - C31   # brute-force throttle is table stakes on the most-attacked route
+    conditional:
+      writes_session_or_audit:
+        - C09
+      external_identity_provider:
+        - C06
+        - C07
+        - C17
+        - C43   # IdP down — fail closed for issuance (the floor), but cached
+                # validation paths need the open/closed decision DECLARED
+      credential_side_effect_needs_port:
+        - C17
+      protected_auth_operation:
+        - C26
+      refresh_token_rotation_or_reuse_detection:
+        - C09
+        - C10   # load token row, lock, decide on revoked/used, mark rotated —
+                # this IS load-lock-decide-write; two concurrent refreshes with
+                # the same token is the canonical race AND attack signal
+        - C20   # rotation is a command-with-invariants; framework fusion here
+                # hides the very tx/lock the C10 conditional demands
+      health_probed_by_orchestrator_or_lb:
+        - C35
+        - C48
+      emits_dimensional_metrics:
+        - C55
+      boot_requires_env_config_or_secrets:
+        - C41
+    forbidden_by_default:
+      - C11
+
+  async_job_worker:
+    meaning: consume durable message, do work, ack/nack/DLQ
+    note: >
+      The outbox publisher that C11 mandates ("separate publisher dispatches
+      outbox") classifies HERE — its queue is the outbox table. Replay-safety
+      and mark-after-ack are this archetype's C08/C05 obligations applied to
+      the polled table.
+    default:
+      - C01
+      - C02
+      - C03
+      - C04
+      - C05
+      - C07
+      - C08
+      - C09
+      - C10
+      - C16
+      - C17
+      - C18
+      - C19
+      - C27   # SIGTERM mid-message is the loss/double-processing window
+      - C41   # a worker definitionally boots from config; validate before polling
+      - C47   # and that config is immutable until restart
+    conditional:
+      emits_event_or_external_call_after_state_change:
+        - C11
+      authz_depends_on_resource_state:
+        - C15
+      external_IO:
+        - C06
+      consumer_prefetch_or_max_in_flight_configurable:
+        - C29   # unbounded prefetch = receive-side rate mismatch -> OOM
+      correlates_messages_across_time:
+        - C10   # chunk races on the aggregate row: two chunks must not both
+                # see k-1 and both emit; completion check inside the append tx
+        - C19
+        - C34   # the EIP aggregator's defining hazard: the whole that never
+                # arrives; partial state needs a deadline and an expiry policy
+      orchestrates_multi_step_saga:
+        - C11   # state transition + next command published atomically — the
+                # most outbox-shaped operation in existence
+        - C34   # the stuck saga: timeout + park policy, not eternal waiting
+      delete_releases_external_resources:
+        - C37
+      mirrors_external_durable_state:
+        - C40   # webhooks/events are hints; the reconciliation sweep is truth
+                # (the sweep itself classifies as scheduled_job)
+      resumes_from_stored_cursor_or_offset:
+        - C49   # compacted offset / expired ResourceVersion is an EXPECTED
+                # outcome with a resync fallback, not a crash loop
+      mixed_criticality_share_one_queue:
+        - C53
+      stages_bytes_to_local_disk:
+        - C57
+      query_over_unbounded_collection:
+        - C58
+      stores_external_artifact_references:
+        - C54
+      computes_durations_or_ttls:
+        - C44
+      health_probed_by_orchestrator_or_lb:
+        - C35
+        - C48
+      emits_dimensional_metrics:
+        - C55
+      handles_secret_token_or_credential:
+        - C25
+    forbidden_by_default:
+      - C12
+      - C13
+      - C14
+      - C20
+      - C32   # single-flight on a message consumer = misclassified scheduled
+              # poller (reclassify to scheduled_job) or fighting the
+              # competing-consumers model the queue exists to provide
+      - C56   # work that must outlive its requester is the TIME seam's
+              # defining property; honoring requester cancellation mid-message
+              # fights at-least-once delivery — finish, then let C08 dedup
+
+  scheduled_job:
+    meaning: time-triggered periodic in-process work; no inbound message or request
+    note: >
+      If shipped as a standalone binary invoked by system cron rather than an
+      in-process scheduler, classify as cli_stateful or cli_orchestrator
+      instead. Dedup here is time-window-shaped, not event-id-shaped — that
+      difference plus C32 is what makes this irreducible to async_job_worker.
+    default:
+      - C01   # C41 (default) already declares the config trust boundary that invokes C01
+      - C02
+      - C04
+      - C05
+      - C16
+      - C17
+      - C18
+      - C27
+      - C32   # the defining hazard: two instances fire the same tick
+      - C41
+      - C47
+    conditional:
+      db_writes:
+        - C09
+        - C19
+      mutation_depends_on_current_state:
+        - C10
+      external_call_after_state_change:
+        - C11
+      external_IO:
+        - C06
+      retry_within_run:
+        - C07
+      effect_must_not_double_across_windows:
+        - C08
+      mirrors_external_durable_state:
+        - C40   # the reconciliation sweep IS this card — compare, repair or
+                # park, both idempotent
+      adjusts_capacity_or_limits_from_signals:
+        - C51   # hysteresis: a tick that can reverse the last tick's decision
+                # needs a cooldown, or the schedule becomes a thrash generator
+      resumes_from_stored_cursor_or_offset:
+        - C49
+      query_over_unbounded_collection:
+        - C58   # the nightly sweep that loads the whole table is this card's
+                # recurring OOM
+      stages_bytes_to_local_disk:
+        - C57
+      stores_external_artifact_references:
+        - C54
+      computes_durations_or_ttls:
+        - C44
+      emits_dimensional_metrics:
+        - C55
+      handles_secret_token_or_credential:
+        - C25
+    forbidden_by_default:
+      - C12
+      - C13
+      - C14
+      - C20
+
+  webhook_receiver:
+    meaning: verify sender, dedupe, enqueue or ack fast
+    note: >
+      Webhooks are hints, not a ledger (C40): they drop, double, and reorder.
+      If this receiver maintains a local mirror of the sender's state, the
+      reconciliation sweep is a SEPARATE scheduled_job carrying C40 — never
+      this card's inline obligation; the receiver stays fast-ack.
+    default:
+      - C01
+      - C02
+      - C05
+      - C08
+      - C14
+      - C16
+      - C18
+      - C19
+      - C25
+      - C31   # unauthenticated edge: body cap + rate limit before buffering
+    conditional:
+      durable_dedup_store:
+        - C09   # the dedup insert is a DB write; C08's atomic key claim
+                # implies a tx that must also be SHORT
+      enqueue_after_dedupe:
+        - C11
+      external_IO:
+        - C06
+        - C17
+      async_processing:
+        - C07
+      health_probed_by_orchestrator_or_lb:
+        - C35
+        - C48
+      emits_dimensional_metrics:
+        - C55
+      boot_requires_env_config_or_secrets:
+        - C41
+    forbidden_by_default:
+      - C10
+      - C15
+      - C20
+      - C26
+
+  bff_aggregator:
+    meaning: fan out to downstream APIs, join, shape response
+    note: >
+      ONE downstream is not fan-out — it is a passthrough/proxy (translate or
+      sign the request, forward, relay the response). Classify it HERE with
+      the same default set and NO join machinery; the recurring hazards are
+      C01 on the downstream RESPONSE (re-entry trust boundary), C06, and C25
+      when the proxy injects a credential. This note is the explicit home for
+      the fan_out recipe's N=1 floor. A passthrough's would-be default set is
+      identical to this card's defaults — which is why it failed the
+      irreducibility condition and is a note, not an archetype.
+    default:
+      - C01
+      - C02
+      - C04   # partial failure is the archetype's defining property; pairs with C05
+      - C05
+      - C06
+      - C16
+      - C17
+      - C18
+      - C26
+    conditional:
+      partial_failure_policy:
+        - C43   # each downstream's timeout fallback is a DECLARED open/closed
+                # decision, not whatever the join code happens to do
+      downstream_retry:
+        - C07
+      real_store_cache:
+        - C19
+        - C42   # aggregator-side cache of expensive joins is stampede bait
+      list_response:
+        - C23
+      downstream_write_under_retry:
+        - C08   # aggregator captures/forwards the idempotency key for any
+                # downstream WRITE — the fan_out recipe's seam-critical C08
+                # landing on the aggregator side
+      long_downstream_io_with_cancellable_caller:
+        - C56   # caller gone -> cancel the whole fan, not just stop joining
+      handles_secret_token_or_credential:
+        - C25
+      publicly_reachable_or_abuse_plausible:
+        - C31
+      health_probed_by_orchestrator_or_lb:
+        - C35
+        - C48
+      emits_dimensional_metrics:
+        - C55
+      boot_requires_env_config_or_secrets:
+        - C41
+    forbidden_by_default:
+      - C09
+      - C10
+      - C11
+      - C20
+      - C33
+
+  upload_streaming:
+    meaning: bulk byte transfer — file upload, download, large export; transfer ends when bytes end
+    note: >
+      v0.5 also claimed SSE/WebSocket; those are realtime_channel now. The
+      split is real, not cosmetic: the two archetypes share exactly one
+      control (C29, rate-mismatch buffering) and diverge on everything else
+      (size caps/resumability here vs C28/C30 there).
+    default:
+      - C01
+      - C02
+      - C04   # >=2 recoverable outcomes (too-large / unauthorized / storage-fail); pairs with C05
+      - C05
+      - C06
+      - C16
+      - C17
+      - C18
+      - C26
+      - C29   # streaming a large export to a slow client = unbounded send
+      - C31   # size cap before buffering + disk-exhaustion guard — near-universal
+              # for uploads; floor drops it only for construction-bounded transfers
+    conditional:
+      principal_scoped_objects:
+        - C15
+        - C21   # GET /files/:id without a scope predicate is textbook IDOR,
+                # and file stores are where IDOR actually happens
+      metadata_DB_write:
+        - C09
+        - C19
+      external_storage_after_DB_change:
+        - C11
+      resumable_upload:
+        - C08
+      retryable_storage_call:
+        - C07
+      stages_bytes_to_local_disk:
+        - C57   # tmp staging is legitimate here (the old note) — and now it
+                # carries the finalizer guarantee + bounded staging volume
+      long_downstream_io_with_cancellable_caller:
+        - C56   # client abandons the download -> stop reading from storage
+      handles_secret_token_or_credential:
+        - C25
+      health_probed_by_orchestrator_or_lb:
+        - C35
+        - C48
+      emits_dimensional_metrics:
+        - C55
+      boot_requires_env_config_or_secrets:
+        - C41
+    forbidden_by_default:
+      - C10
+      - C20
+
+  realtime_channel:
+    meaning: long-lived server-push or bidirectional connection (SSE/WebSocket); the session outlives any single request
+    note: >
+      cli_daemon's web twin — whatever attaches to one is checked against the
+      other by reflex. A frame that mutates state with invariants is NOT this
+      card's problem: it is a fusion (channel as transport outer, http_command
+      per-message inner; see server-web-archetype-fusions.txt realtime_composition).
+      Forbidding C20 here forces that fusion instead of letting the card bloat
+      into owning C10/C15. The C52 proposal's keepalive-bookmark obligation
+      merged into C28 (v0.7) — the idle-stream half of C28's heartbeat item.
+    default:
+      - C01   # EVERY inbound frame is a trust boundary, not just the
+              # handshake — the easy miss: frameworks validate the upgrade,
+              # then hand you raw payloads forever after
+      - C02   # per-frame dispatch is thin-handler territory, like every web card
+      - C04   # >=2 recoverable per-frame outcomes (bad frame / rate-limited / authz-stale); pairs with C05
+      - C05
+      - C06
+      - C16
+      - C18
+      - C26   # at upgrade/handshake
+      - C27   # drain: close connections gracefully on deploy
+      - C28   # lifecycle: heartbeat, idle keepalive/bookmark, abnormal-disconnect cleanup
+      - C29   # backpressure: bounded send buffer per connection
+      - C30   # re-authz over connection lifetime
+    conditional:
+      inbound_message_mutates_state:
+        - C08
+        - C09
+        - C19
+      external_IO:
+        - C06
+        - C17
+      fan_out_to_subscribers:
+        - C29   # per-subscriber buffer; slowest-consumer policy explicit
+      computes_durations_or_ttls:
+        - C44   # heartbeat intervals and idle budgets measured monotonically
+      publicly_reachable_or_abuse_plausible:
+        - C31   # connection-rate and handshake limits
+      health_probed_by_orchestrator_or_lb:
+        - C35
+        - C48
+      emits_dimensional_metrics:
+        - C55
+      boot_requires_env_config_or_secrets:
+        - C41
+      handles_secret_token_or_credential:
+        - C25
+    forbidden_by_default:
+      - C14
+      - C20
+
+cli_archetypes:
+  cli_transformer:
+    meaning: stdin/file input transformed to stdout or file; no state
+    default:
+      - C01
+      - C02
+      - C05
+      - C12
+      - C18
+    conditional:
+      semantic_exit_needed:
+        - C13
+      external_IO:
+        - C06
+        - C17
+      file_output_whose_torn_state_matters:
+        - C33
+      stages_bytes_to_local_disk:
+        - C57   # transform via temp file: the early-error path must still unlink
+      handles_secret_token_or_credential:
+        - C25
+    forbidden_by_default:
+      - C08
+      - C09
+      - C10
+      - C11
+      - C20
+
+  cli_invoker:
+    meaning: invoke an external tool, API, or remote state source; evaluate; relay or emit a semantic result
+    note: >
+      MERGE of v0.5 cli_wrapper + cli_status_checker. Their default sets
+      differed by two controls, each expressible as a conditional on the
+      other (C04: verdict branching; C17: external client shape) — mutual
+      flavor variants, failing the irreducibility condition. The wrapper
+      flavor translates own flags to a child call; the checker flavor
+      queries state and evaluates. Same card, two triggers.
+    default:
+      - C01
+      - C02
+      - C05
+      - C06
+      - C12
+      - C13
+      - C16
+      - C17
+      - C18
+    conditional:
+      verdict_requires_recoverable_branching:
+        - C04
+      retry_child_or_remote_call:
+        - C07
+      handles_secret_token_or_credential:
+        - C25
+    forbidden_by_default:
+      - C08
+      - C09
+      - C10
+      - C11
+      - C20
+
+  cli_orchestrator:
+    meaning: read plan, execute steps, aggregate per-step results
+    default:
+      - C01
+      - C02
+      - C04
+      - C05
+      - C12
+      - C13
+      - C16
+      - C17
+      - C18
+    conditional:
+      external_step_IO:
+        - C06
+      retry_steps:
+        - C07
+      persisted_run_state:
+        - C08
+        - C09
+        - C19
+        - C33   # run-state file torn mid-write corrupts resume
+      external_call_after_state_change:
+        - C11
+      concurrent_invocation_possible:
+        - C32   # cron-fired orchestrator: overlapping runs
+      stores_external_artifact_references:
+        - C54   # a plan referencing image:latest deploys something different
+                # every run; pin the digest in the plan
+      handles_secret_token_or_credential:
+        - C25
+    forbidden_by_default:
+      - C20
+
+  cli_stateful:
+    meaning: read state, plan, apply, checkpoint/resume
+    default:
+      - C01
+      - C02
+      - C03
+      - C04
+      - C05
+      - C08
+      - C09
+      - C10
+      - C12
+      - C13
+      - C16
+      - C17
+      - C18
+      - C19
+      - C33   # checkpoint/resume is the meaning; kill -9 mid-checkpoint must
+              # leave the old state intact — torn state file defeats resume
+    conditional:
+      external_call_after_state_change:
+        - C11
+      retry_needed:
+        - C07
+      external_IO:
+        - C06
+      long_running_and_interruptible:
+        - C27   # checkpoint-on-SIGTERM, exit within the grace period
+      concurrent_invocation_possible:
+        - C32
+      query_over_unbounded_collection:
+        - C58   # plan/apply over a growing inventory must batch, not materialize
+      stores_external_artifact_references:
+        - C54
+      handles_secret_token_or_credential:
+        - C25
+    forbidden_by_default:
+      - C20
+
+  cli_daemon:
+    meaning: long-lived process handling events/timers/sockets
+    default:
+      - C01
+      - C02
+      - C04
+      - C05
+      - C06
+      - C16
+      - C17
+      - C18
+      - C27   # long-lived by definition; SIGTERM must drain, not drop
+      - C41   # boots from config by definition; validate before the event loop
+      - C47   # and that config is immutable until restart
+    conditional:
+      holds_persistent_connections:
+        - C28   # realtime_channel's twin attachment: half-open TCP through a
+                # proxy, no heartbeat, fd leak over weeks
+      connections_carry_authenticated_principals:
+        - C30   # twin reflex completed: authz drift on a daemon's long-lived
+                # authenticated peers is realtime_channel's mode, same control
+      emits_machine_stdout:
+        - C12
+      has_semantic_process_exit:
+        - C13
+      writes_state:
+        - C08
+        - C09
+        - C10
+        - C19
+      state_file_checkpoint:
+        - C33
+      external_call_after_state_change:
+        - C11
+      retry_needed:
+        - C07
+      rate_mismatched_producer_consumer:
+        - C29
+      resumes_from_stored_cursor_or_offset:
+        - C49   # the watch loop with an expired ResourceVersion must resync,
+                # not crash-loop
+      adjusts_capacity_or_limits_from_signals:
+        - C51
+      computes_durations_or_ttls:
+        - C44
+      stages_bytes_to_local_disk:
+        - C57
+      emits_dimensional_metrics:
+        - C55
+      handles_secret_token_or_credential:
+        - C25
+      exposes_network_endpoint:
+        - C26
+        - C31
+        - C35   # probed daemons get the liveness/readiness split
+        - C48   # and the not-ready-not-crash boot gate
+    forbidden_by_default:
+      - C20

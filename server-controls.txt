@@ -1,0 +1,1249 @@
+version: 0.9
+kind: control_catalog
+
+# PUBLICATION NOTE (draft): published together with the CLI trio and the
+# archetype control map (siblings). Cross-references to
+# server-corpus-open-issues.txt (the maintainers' falsification ledger) and
+# server-async-archetype-fusions.txt / server-web-archetype-fusions.txt
+# (the web/async seam layers) are not yet published and are forward
+# references. Known ledger item OI-12: C08-C11 and C50 are flagged as
+# web/DB-plane-coupled (their proofs assume SQL transactions / outbox
+# tables / endpoint flags), pending a generic-obligation / surface-proof
+# split; C33 and C19 transfer cleanly to file-state CLIs.
+
+# CHANGES FROM v0.8
+#  - C32 floor EXTENDED (additive): a second lock-avoidance case — concurrent
+#    writers that are lost-update-tolerant and serialize through an atomic
+#    whole-file swap (C33), where last-write-wins is acceptable by design.
+#    Prior floor named only single-instance + runtime<interval, which
+#    false-flagged concurrent user-invoked state writers that tolerate a
+#    dropped update (frecency / rank stores — the zoxide case). Ties to C33's
+#    existing "loss/corruption acceptable" floor. No map or attachment change.
+#  - C06 floor EXTENDED (additive): a supervised long-lived child whose
+#    lifetime IS the point (a watched dev server / REPL under a daemon or
+#    supervisor) — an unbounded wait is correct there; the obligation
+#    redirects to C27 graceful teardown, not a timeout. Prior floor
+#    ("in-memory only") had no exemption for tools whose job is to run a
+#    child unbounded (file-watchers, process supervisors — the modd case).
+#  - Both surfaced by the zoxide + modd adversarial worked examples.
+#  - No required/proof body changed; no control added or retired.
+
+# CHANGES FROM v0.7
+#  - Internal file references updated to the server- prefixed names after the
+#    server/client corpus split: archetype-control-map.txt ->
+#    server-archetype-control-map.txt, async-archetype-fusions.txt ->
+#    server-async-archetype-fusions.txt. No control obligations changed.
+
+# CHANGES FROM v0.6
+#  - C35-C58 REVIEWED from the K8s/SRE proposal batch: 19 promoted, 5 not.
+#    The batch was strong on the PROCESS-LIFECYCLE and RESOURCE-EXHAUSTION
+#    axes (boot, probes, disk, metric cardinality, unbounded queries) that
+#    C27-C34 only began covering. Proposal IDs are KEPT; the gaps below are
+#    documented rejections, not lost cards — traceable to this review.
+#
+#  PROMOTED:
+#    C35 liveness-readiness-separation  (AMENDED: deep readiness on a shared
+#        dependency converts partial degradation into a fleet-wide LB-drain
+#        outage — readiness checks only serve-NOTHING dependencies; degraded
+#        paths are C43's decision, not readiness's)
+#    C37 async-resource-cleanup-guard   (C11's twin for deletes)
+#    C38 system-managed-state-isolation (mass assignment; C01's companion on
+#        the mutation's SHAPE — C01 validates what arrives, C38 bounds what
+#        an update may even express)
+#    C40 out-of-band-reconciliation     (webhooks are hints; the sweep is truth)
+#    C41 fail-fast-startup-validation   (AMENDED: scope is CONFIG only —
+#        crashing on an unreachable DEPENDENCY at boot is a crash-loop storm
+#        during dependency recovery; that case is C48's not-ready path)
+#    C42 cache-stampede-protection      (AMENDED: single-flight is per-process;
+#        a process-local mutex bounds the herd to one query PER INSTANCE —
+#        fleet-wide protection is the ceiling, claimed only when built)
+#    C43 explicit-fail-open-or-closed   (C06's missing half — a timeout is a
+#        policy decision about availability vs correctness, not just an error)
+#    C44 monotonic-time-for-duration
+#    C47 immutable-configuration-state
+#    C48 dependency-readiness-gate      (C41's dependency-side complement)
+#    C49 stale-cursor-recovery
+#    C50 dry-run-mutation-support       (AMENDED: transaction rollback does
+#        NOT cover non-transactional side effects, sequences, or lock
+#        contention — side effects are GATED, not rolled back; opt-in only,
+#        and rate-limited because it takes the same locks as the real path)
+#    C51 state-machine-hysteresis       (recurrence thin at app level;
+#        attached narrowly in the map)
+#    C53 request-priority-tiering
+#    C54 immutable-asset-references
+#    C55 bounded-metric-cardinality
+#    C56 downstream-cancellation-propagation (C16 CARRIES the token; this
+#        card makes IO clients HONOR it. AMENDED: honored only up to the
+#        transaction's point of no return — C11's outbox makes cancellation
+#        atomic, so the carve-out matters on C11's floor path, where
+#        commit-then-call has begun)
+#    C57 ephemeral-disk-cleanup-guarantee
+#    C58 mandatory-pagination-bound     (NARROWED: the storage-side driver
+#        LIMIT, off the HTTP edge. C23 owns the envelope; C23's max limit
+#        now compiles down to this — see the C23 amendment)
+#
+#  NOT PROMOTED (IDs retired):
+#    C36 declarative-state-mutation — DISSOLVED. Idempotent full-state PUT is
+#        already C08's floor; the lost-update hazard naive full-PUT introduces
+#        is C10's proof test (lost_update_prevented). The declarative mandate
+#        is an architecture preference, not a trigger-bound obligation.
+#    C39 poison-pill-dead-letter — MERGED into C05 (new forbidden +
+#        proof). C01 already declares the queue message a trust boundary;
+#        the one genuinely missing line was "unparseable is TERMINAL".
+#    C45 workload-isolation-pool — REJECTED: review-only proof, no
+#        code-level obligation; deployment-topology material, not a card.
+#    C46 bounded-dynamic-metadata — MERGED into C31 (metadata shape bounds
+#        at the boundary; index exhaustion is inbound load wearing JSONB).
+#    C52 stream-keepalive-bookmark — MERGED into C28 (idle server-push
+#        keepalive; "heartbeat with a named interval" was already C28's
+#        first required item, and CL14 holds the client half).
+#
+#  AMENDED EXISTING CARDS: C05 (C39 merge), C23 (driver-level limit line,
+#  the C58 hook), C28 (C52 merge), C31 (C46 merge).
+
+# CHANGES FROM v0.5
+#  - C27-C33 ADDED (operational axis: shutdown, load bounds, cross-instance
+#    concurrency, connection lifetime). C34 correlation-state-expiry amended
+#    in with the server-async-archetype-fusions v0.2 rewrite.
+#  - C07 dangling reference fixed; C21 trigger widened to mutation scoping;
+#    C26 conditional CSRF obligation. Full history in v0.6 of this file.
+
+selection_rule:
+  meaning: Controls are trigger-bound obligations, not optional style advice.
+  source_of_truth:
+    obligation: this file (trigger, floor, ceiling, required, forbidden, proof)
+    attachment: server-archetype-control-map.txt (default / conditional / forbidden)
+  apply_order:
+    - classify_archetype
+    - detect_triggers
+    - attach_default_controls
+    - attach_conditional_controls
+    - drop_control_if_floor_condition_holds
+    - reject_forbidden_controls_unless_reclassified_or_justified
+    - prove_each_attached_control
+
+controls:
+  - id: C01
+    name: schema-at-boundary
+    trigger: input crosses a trust boundary
+    floor: in-process call from already-validated code; no boundary is crossed
+    ceiling: published-contract schema registry + versioning when external consumers depend on the shape (mode = consumer breakage, not local trust)
+    use_when:
+      - HTTP body/query/params
+      - CLI argv/stdin
+      - config file
+      - environment variables
+      - webhook payload
+      - queue message
+      - subprocess output
+      - LLM output
+      - external API response
+      - realtime frame/message (EVERY frame, not just the handshake)
+    required:
+      - runtime schema exists
+      - raw input treated as unknown
+      - validation happens before service/domain code
+      - validated DTO passed inward
+      - type derived from schema where stack supports it
+    forbidden:
+      - JSON.parse_as_T
+      - raw_any_into_service_or_domain
+      - duplicated_schema_and_type
+      - validation_hidden_inside_domain_logic
+      - trusting_LLM_or_subprocess_output_without_validation
+      - post_handshake_frames_treated_as_trusted
+    proof:
+      auto:
+        - no_any
+        - no_unchecked_cast
+      tests:
+        - valid_input_passes
+        - missing_required_field_fails
+        - wrong_type_fails
+        - hostile_extra_field_handled
+
+  - id: C02
+    name: thin-handler
+    trigger: request, job, command, or event reaches an entrypoint
+    floor: none — always applies
+    ceiling: command bus / mediator when many command types need dynamic dispatch (mode = dispatch fan-out, not handler length)
+    required:
+      - receive typed input
+      - read already-established context
+      - call one use case or query path
+      - map Result/Error to response/status/ack/exit
+    forbidden:
+      - business_logic_in_handler
+      - SQL_in_handler
+      - external_IO_in_handler
+      - dependency_construction_in_handler
+      - transaction_ownership_in_handler_for_real_commands
+      - multiple_hidden_use_cases_in_one_handler
+    proof:
+      review:
+        - one_use_case_call
+        - no_domain_branching
+        - no_DB_import
+        - no_external_SDK_import
+
+  - id: C03
+    name: domain-pure-function
+    trigger: business rule, invariant, calculation, or state transition exists
+    floor: pure store/retrieve with no rule — there is no domain to extract
+    ceiling: none
+    required:
+      - pure function or pure domain module
+      - plain input and output data
+      - no framework imports
+      - no DB, network, filesystem, queue, clock, env, or subprocess IO
+    forbidden:
+      - domain_reads_environment
+      - domain_calls_database
+      - domain_calls_external_API
+      - domain_mutates_global_state
+      - domain_imports_transport_or_persistence_types
+    proof:
+      tests:
+        - pure_rule_unit_tests
+        - deterministic_same_input_same_output
+        - edge_cases_covered
+
+  - id: C04
+    name: result-error-union
+    trigger: recoverable failure must be handled by caller
+    floor: programmer errors and invariants still throw — do not Result-ify a bug
+    ceiling: none
+    required:
+      - Result_ok_or_err_or_stack_native_equivalent
+      - typed error variants
+      - caller branches explicitly
+      - variants map exhaustively at boundary
+    forbidden:
+      - throwing_for_domain_rejection
+      - null_or_undefined_as_error
+      - bare_error_string
+      - catch_all_then_generic_failure
+    proof:
+      auto:
+        - exhaustive_switch_where_supported
+      tests:
+        - each_error_variant_mapped
+        - business_error_not_retried
+        - transient_error_classified
+
+  - id: C05
+    name: exhaustive-status-mapping
+    trigger: errors leave service boundary
+    floor: single outcome only (one success, no distinct error classes)
+    ceiling: none
+    required:
+      - one mapping table or one mapping function
+      - stable error codes
+      - business/client/transient/programmer failures are distinct
+      - HTTP status, CLI exit code, or queue decision is explicit
+      - parse/validation failure on a consumed message routes to DLQ or explicit reject — a typed, terminal outcome (C39 merge)
+    forbidden:
+      - 200_with_error_body
+      - generic_500_for_client_error
+      - all_cli_failures_exit_1
+      - ack_on_unknown_job_error
+      - leaking_stack_trace_to_client
+      - unparseable_message_scheduled_for_retry   # C39 merge — a poison pill retried is a worker crash loop; malformed is TERMINAL, not transient
+    proof:
+      tests:
+        - validation_maps
+        - not_found_maps
+        - conflict_maps
+        - forbidden_maps
+        - transient_maps
+        - unknown_maps_safely
+        - malformed_message_routed_to_dlq_without_retry
+
+  - id: C06
+    name: timeout-every-IO
+    trigger: external IO call exists
+    floor: in-memory only, no external IO; OR the child is a supervised long-lived process whose lifetime IS the point (a watched dev server, a REPL, an interactive editor under a daemon/supervisor) — an unbounded wait is correct there and the obligation redirects to C27 graceful teardown, not a deadline
+    ceiling: circuit breaker + bulkhead when repeated failures must shed load (mode = cascading failure, not one slow call)
+    required:
+      - connect timeout or stack equivalent
+      - read/operation timeout or stack equivalent
+      - timeout budget named
+      - timeout maps to typed failure
+    forbidden:
+      - default_infinite_timeout
+      - unbounded_subprocess_wait
+      - request_timeout_greater_than_caller_budget
+      - timeout_error_lost_as_generic_failure
+    proof:
+      tests:
+        - timeout_maps_to_typed_error
+        - caller_receives_expected_status_or_exit
+
+  - id: C07
+    name: retry-only-idempotent
+    trigger: retry is proposed
+    floor: operation naturally idempotent and cheap to fail — just fail and surface
+    ceiling: durable retry queue / DLQ when retries must survive process death (mode = durability, not transient recovery)
+    required:
+      - operation classified as idempotent or guarded by idempotency key
+      - retryable error classes listed
+      - max attempts defined
+      - backoff uses full jitter
+      - business rejection is terminal
+      - each attempt and the terminal outcome logged with the correlation id (C16)
+    forbidden:
+      - retry_non_idempotent_write
+      - retry_business_rejection
+      - unbounded_retry
+      - retry_attempts_or_terminal_outcome_unlogged
+    proof:
+      tests:
+        - retry_transient_error
+        - no_retry_terminal_error
+        - max_attempts_enforced
+
+  - id: C08
+    name: idempotency-key
+    trigger: client, queue, webhook sender, or process may repeat a mutation
+    floor: operation is naturally idempotent (e.g. PUT of full state)
+    ceiling: C11 outbox / saga when the effect crosses a service boundary and cannot share one local transaction
+    required:
+      - stable key captured at boundary
+      - same key produces one effect
+      - same key returns stored or equivalent result
+      - key claim stored atomically with effect where applicable
+    forbidden:
+      - retryable_POST_without_key
+      - idempotency_checked_outside_effect_tx
+      - key_not_in_unique_constraint
+      - different_response_on_replay_without_reason
+    proof:
+      tests:
+        - same_key_twice_one_effect
+        - same_key_same_response
+        - concurrent_same_key_one_winner
+
+  - id: C09
+    name: short-transaction
+    trigger: DB write transaction exists
+    floor: no DB write — no transaction
+    ceiling: saga when the unit of work spans services and cannot share one transaction
+    required:
+      - transaction scope named
+      - DB work only inside transaction
+      - commit or rollback explicit
+      - no slow external boundary inside transaction
+    forbidden:
+      - network_IO_inside_transaction
+      - filesystem_or_subprocess_inside_transaction_when_slow
+      - long_transaction_over_external_call
+      - hidden_implicit_transaction_for_critical_command
+    proof:
+      review:
+        - no_external_call_inside_tx
+        - tx_boundary_visible
+      tests:
+        - mid_tx_failure_rolls_back
+
+  - id: C10
+    name: load-lock-decide-write
+    trigger: mutation depends on current DB state
+    floor: single-writer or no real contention — no lock needed; if the endpoint is a plain row update with no invariant, reclassify to http_crud (write) rather than attach C10
+    ceiling: distributed lock / lease when one DB transaction cannot cover multi-node coordination
+    required:
+      - open transaction
+      - load fresh state
+      - lock row or use serializable retry
+      - domain decision runs on loaded state
+      - write effect in same transaction
+    forbidden:
+      - preload_entity_before_transaction
+      - stale_read_then_write
+      - stateful_validation_before_lock
+      - decision_based_on_cached_state
+    proof:
+      tests:
+        - concurrent_mutations_preserve_invariant
+        - lost_update_prevented
+
+  - id: C11
+    name: outbox-after-state-change
+    trigger: external call, event, or message follows DB state change
+    floor: external call is idempotent and order-tolerant — order it (commit, then call with C08 key) instead of an outbox
+    ceiling: saga when a later step must COMPENSATE (undo) the external effect; outbox guarantees delivery, not undo
+    required:
+      - state change and outbox row committed in same transaction
+      - separate publisher dispatches outbox
+      - publisher is replay-safe
+      - receiver or downstream operation is idempotent
+    forbidden:
+      - HTTP_call_inside_transaction
+      - publish_after_commit_without_outbox
+      - DB_change_plus_external_call_inline
+      - mark_sent_before_external_ack
+    proof:
+      tests:
+        - state_and_outbox_commit_together
+        - publisher_replay_safe
+        - crash_after_commit_before_publish_recovers
+
+  - id: C12
+    name: stdout-data-stderr-logs
+    trigger: CLI emits machine-consumable output
+    floor: human-only tool with no machine-consumed output
+    ceiling: none
+    required:
+      - stdout contains only data
+      - stderr contains logs, progress, warnings
+      - JSON output mode is parseable
+      - human progress does not corrupt stdout
+    forbidden:
+      - logs_on_stdout
+      - progress_mixed_with_JSON
+      - warnings_before_JSON_on_stdout
+    proof:
+      tests:
+        - stdout_parseable
+        - stderr_contains_logs
+        - pipeline_consumes_stdout
+
+  - id: C13
+    name: semantic-exit-code
+    trigger: CLI outcome has multiple meanings
+    floor: single binary outcome — 0 success / 1 failure suffices
+    ceiling: none
+    required:
+      - exit code table exists
+      - domain verdict distinct from transport failure
+      - partial success distinct where relevant
+      - locked/unreachable/bad-input have separate meanings where relevant
+    forbidden:
+      - all_failures_exit_1
+      - unhealthy_equals_unreachable
+      - child_exit_code_remapped_accidentally
+    proof:
+      tests:
+        - success_exit_0
+        - domain_bad_exit_specific
+        - unreachable_exit_specific
+        - bad_input_exit_specific
+
+  - id: C14
+    name: raw-body-before-webhook-parse
+    trigger: webhook signature covers raw body
+    floor: internal/trusted caller with no signature — but then question whether it is a webhook at all
+    ceiling: mTLS / mutual auth when per-request signature is insufficient (mode = channel-level trust)
+    required:
+      - capture raw body
+      - verify signature before JSON parsing
+      - constant-time compare
+      - timestamp freshness check
+      - reject invalid signature before binding
+    forbidden:
+      - framework_auto_JSON_parse_first
+      - parse_then_reserialize_for_signature
+      - normal_string_compare_for_signature
+      - business_logic_before_signature_verify
+    proof:
+      tests:
+        - invalid_signature_no_parse
+        - old_timestamp_rejected
+        - valid_signature_then_parse
+
+  - id: C15
+    name: ownership-authz-on-fresh-state
+    trigger: authorization depends on mutable resource state
+    floor: authz is a static role/scope check independent of resource state — a coarse edge check is enough
+    ceiling: external policy engine when authz rules are many and centrally managed
+    required:
+      - authenticate at edge
+      - load resource fresh
+      - authorize against loaded state
+      - run inside transaction if mutation follows
+      - authorization and decision use same fresh state
+    forbidden:
+      - final_ownership_check_in_pre_handler
+      - cached_ownership_decision
+      - route_model_binding_for_command_authz
+      - authorize_then_later_load_mutated_state
+    proof:
+      tests:
+        - forbidden_actor_rejected
+        - ownership_changed_before_write_rejected
+
+  - id: C16
+    name: request-context-threading
+    trigger: request or job needs identity, request_id, deadline, logger, transaction, or cancellation
+    floor: no cross-cutting need — no id, deadline, or correlation to carry
+    ceiling: distributed tracing system when context must span process boundaries (mode = cross-service correlation)
+    required:
+      - explicit context object or stack-native request context
+      - context propagated to services
+      - context propagated to IO calls
+      - request_id/correlation_id preserved
+    forbidden:
+      - context_recreated_mid_stack
+      - request_id_lost_downstream
+      - hidden_singleton_context
+      - context_background_inside_request_flow
+    proof:
+      tests:
+        - request_id_propagates_to_log_or_downstream
+        - cancellation_or_deadline_reaches_IO_where_testable
+
+  - id: C17
+    name: swappable-side-effect-port
+    trigger: service touches external dependency
+    floor: a one-method dependency is a function, not an interface — inject the function
+    ceiling: DI container when the wiring graph is large enough that hand-wiring main() is the bottleneck
+    required:
+      - interface or port defined at consumer side
+      - production adapter implements port
+      - test fake or real integration boundary exists
+      - domain does not import adapter
+    forbidden:
+      - direct_SDK_use_in_domain
+      - monkey_patch_dependency
+      - global_client_reached_from_service
+      - adapter_types_leak_into_domain
+    proof:
+      tests:
+        - service_uses_port_contract
+        - adapter_contract_test_where_useful
+
+  - id: C18
+    name: vertical-test-slice
+    trigger: implementing behavior
+    floor: none — always applies
+    ceiling: none
+    required:
+      - failing test first
+      - one behavior per slice
+      - observed failure recorded
+      - green before refactor
+    forbidden:
+      - horizontal_layer_sprint
+      - production_code_before_test
+      - test_that_never_failed
+      - refactor_while_red
+    proof:
+      process:
+        - red_observed
+        - right_reason_confirmed
+        - green_observed
+
+  - id: C19
+    name: real-store-integration-test
+    trigger: correctness depends on DB locks, transactions, constraints, migrations, SQL, or materialized/read models
+    floor: logic is pure (no store dependence) — a unit test is correct and a real store is overkill
+    ceiling: full multi-service e2e environment when correctness spans services, not one store
+    required:
+      - real database or real store
+      - seeded data
+      - assert persisted state
+      - exercise actual query/transaction/constraint path
+    forbidden:
+      - repository_mock_for_lock_correctness
+      - fake_DB_for_concurrency
+      - unit_test_only_for_SQL_correctness
+      - mocking_away_transaction_boundary
+    proof:
+      tests:
+        - real_store_happy_path
+        - rollback_or_concurrency_case
+        - constraint_or_query_shape_case
+
+  - id: C20
+    name: no-framework-fusion-for-command
+    trigger: endpoint is Command/write with invariants
+    floor: genuine CRUD (store/retrieve, no invariant) — framework fusion is CORRECT here; do not attach
+    ceiling: none — this is the discipline itself
+    required:
+      - explicit application service
+      - explicit transaction boundary
+      - explicit domain decision
+      - explicit persistence boundary
+      - handler remains transport adapter
+    forbidden:
+      - active_record_in_controller
+      - route_model_binding_preload_for_mutation
+      - form_request_authorize_as_final_resource_authz
+      - ORM_hook_business_logic
+      - implicit_transaction_for_core_invariant
+    proof:
+      review:
+        - handler_thin
+        - tx_visible
+        - domain_pure
+        - lock_visible
+        - stateful_authz_not_prehandler_only
+
+  - id: C21
+    name: scoped-query
+    trigger: read result OR mutation target must be restricted by tenant, user, account, project, or principal
+    floor: genuinely global/public data with no principal scope
+    ceiling: row-level security in the DB when app-layer scope is insufficient (mode = defense-in-depth at storage)
+    required:
+      - query or mutation function receives scope
+      - scope applied in SQL WHERE of SELECT, UPDATE, or DELETE (or equivalent storage filter)
+      - scope is non-optional
+      - unscoped query not exposed to handler
+      - cache key includes scope if cached
+    forbidden:
+      - fetch_all_then_filter
+      - handler_adds_scope_ad_hoc
+      - pagination_without_scope
+      - cache_key_without_scope
+      - repository_method_defaulting_to_unscoped
+      - mutation_by_id_without_scope_predicate
+    proof:
+      tests:
+        - cannot_read_other_tenant_rows
+        - cannot_mutate_other_tenant_rows
+        - page_2_preserves_scope
+        - cache_key_includes_scope_if_cached
+
+  - id: C22
+    name: safe-sort-filter
+    trigger: query params affect WHERE or ORDER BY
+    floor: no client-controlled sort or filter
+    ceiling: a query DSL / expression parser when filtering grows rich (mode = expression language; build it as its own validated grammar)
+    required:
+      - allowed filter fields whitelist
+      - allowed sort fields whitelist
+      - public sort key maps to DB column
+      - unknown sort or filter rejected
+      - dynamic values parameterized
+    forbidden:
+      - raw_ORDER_BY_from_request
+      - raw_WHERE_fragment_from_request
+      - string_concatenated_SQL
+      - silently_ignored_unknown_filter
+      - client_controlled_column_name_without_mapping
+    proof:
+      tests:
+        - allowed_sort_asc_desc
+        - unknown_sort_returns_422
+        - injection_sort_returns_422_not_500
+        - invalid_filter_returns_422
+
+  - id: C23
+    name: pagination-envelope
+    trigger: endpoint returns list or collection
+    floor: result is bounded by construction (single row, fixed small set)
+    ceiling: streaming / cursor export when volume is unbounded (mode = volume, not page navigation)
+    required:
+      - explicit limit
+      - default limit
+      - maximum limit
+      - maximum limit enforced at the SQL/driver level, not only in app code (C58 is the mechanism this envelope compiles down to)
+      - cursor or offset chosen deliberately
+      - stable response envelope
+      - empty page shape stable
+    forbidden:
+      - unbounded_list_response
+      - arbitrary_client_limit
+      - inconsistent_list_shape
+      - expensive_total_count_without_justification
+      - pagination_metadata_shape_drift
+    proof:
+      tests:
+        - default_limit_applied
+        - max_limit_enforced
+        - next_page_works
+        - empty_page_shape_stable
+
+  - id: C24
+    name: n-plus-one-guard
+    trigger: list/read endpoint includes related or derived data
+    floor: no related or derived data in the response
+    ceiling: CQRS read model / materialized view when joins are too expensive at read time (mode = read-side denormalization)
+    required:
+      - set-based query, explicit eager load, dataloader, or batch fetch
+      - query count expectation for list endpoint where testable
+      - serializer does not lazy load
+      - related data ownership/scope remains enforced
+    forbidden:
+      - per_row_DB_call_loop
+      - lazy_relation_access_in_response_mapping
+      - hidden_query_inside_formatter
+      - query_count_grows_linearly_with_rows
+    proof:
+      tests:
+        - list_query_count_constant_or_bounded
+        - related_data_loaded_in_batch
+        - scope_preserved_with_related_data
+
+  - id: C25
+    name: secret-no-leak
+    trigger: code handles a secret, token, credential, API key, or signing key
+    floor: no secret, token, or credential is present in this path
+    ceiling: a secrets manager / vault with rotation when secrets are many, shared, or must rotate on a schedule (mode = secret lifecycle, not just non-leakage)
+    required:
+      - secret read from a secrets source or env at startup, not hardcoded
+      - secret passed via context/injection, not reached from a global
+      - secret never written to logs, traces, or error messages
+      - secret never returned in a response body or echoed to a client
+      - secret excluded from version control
+      - error and serialization paths redact secret-shaped values
+    forbidden:
+      - secret_in_log_or_stdout
+      - secret_in_response_or_error_body
+      - secret_in_stack_trace
+      - secret_hardcoded_in_source
+      - secret_committed_to_version_control
+      - secret_reached_from_global_singleton
+    proof:
+      auto:
+        - secret_scanner_clean
+        - no_hardcoded_credential
+      review:
+        - secret_passed_by_context_not_global
+        - redaction_on_error_and_log_path
+      tests:
+        - secret_absent_from_serialized_error
+        - secret_absent_from_captured_logs
+
+  - id: C26
+    name: auth-required-default-deny
+    trigger: HTTP route or network endpoint that is not explicitly public
+    floor: endpoint is intentionally public and documented as such (health check, login/token issue, public read)
+    ceiling: centralized identity gateway / policy enforcement point when authn spans many services (mode = fleet-wide identity, not one app's routes)
+    required:
+      - principal established before the handler runs
+      - routes deny by default; public routes are an explicit allowlist
+      - missing or invalid credential returns 401 before business logic
+      - token or session is validated, not merely present
+      - established principal is available to authz (C15) and scope (C21)
+      - IF auth is cookie/session-based, state-changing routes verify an anti-CSRF token (bearer-token APIs hit the floor on this item)
+    forbidden:
+      - route_public_by_default
+      - authn_check_inside_business_logic
+      - trusting_unverified_token_claims
+      - principal_absent_but_handler_runs
+      - new_route_ships_without_explicit_authn_decision
+      - cookie_authenticated_mutation_without_csrf_protection
+    proof:
+      review:
+        - default_deny_confirmed
+        - public_routes_are_explicit_allowlist
+      tests:
+        - missing_credential_401
+        - invalid_credential_401
+        - valid_credential_reaches_handler
+        - authn_runs_before_business_logic
+        - csrf_missing_rejected_where_cookie_auth_applies
+
+  - id: C27
+    name: graceful-shutdown-drain
+    trigger: long-lived process holds in-flight work or open connections (worker, daemon, scheduler, realtime server)
+    floor: stateless request handler whose platform/load balancer drains for it; process holds nothing that outlives one request
+    ceiling: fleet-wide rolling deploy choreography with lame-duck mode when coordination spans instances (mode = fleet choreography, not one process's exit)
+    required:
+      - SIGTERM/SIGINT handler installed
+      - intake stops on signal (no new messages, requests, or connections accepted)
+      - in-flight work finished, nacked, or checkpointed within a named drain deadline
+      - connections and queue channels closed before exit
+      - drain deadline shorter than the platform kill grace period (ECS stopTimeout, k8s terminationGracePeriodSeconds)
+    forbidden:
+      - SIGKILL_as_the_only_stop_path
+      - ack_before_work_complete_during_drain
+      - new_work_accepted_after_signal
+      - drain_deadline_longer_than_platform_grace_period
+      - in_flight_work_silently_dropped
+    proof:
+      tests:
+        - signal_stops_intake
+        - in_flight_completes_or_nacks
+        - exit_within_drain_deadline
+
+  - id: C28
+    name: connection-lifecycle
+    trigger: process holds persistent connections whose peer can vanish silently
+    floor: no persistent connection — request/response only
+    ceiling: session registry with resumption when clients must survive reconnects with state (mode = session continuity, not liveness)
+    required:
+      - heartbeat or ping/pong with a named interval
+      - idle server-push streams emit a synthetic keepalive/bookmark frame at a named interval, so silence is distinguishable from a dead pipe (C52 merge; the client resets its disconnect timer on it — CL14's half)
+      - idle timeout with a named budget
+      - abnormal disconnect detected; per-connection resources released
+      - per-connection resource use bounded (buffers, subscriptions, fds)
+      - connection count bounded; reconnect storms limited or jittered
+    forbidden:
+      - connection_assumed_alive_without_heartbeat
+      - fd_or_memory_retained_after_disconnect
+      - unbounded_connection_count
+      - cleanup_only_on_graceful_close
+      - idle_stream_indistinguishable_from_dead_pipe   # C52 merge
+    proof:
+      tests:
+        - dead_peer_detected_within_interval
+        - resources_freed_on_abnormal_disconnect
+        - idle_connection_closed
+        - idle_stream_receives_keepalive_within_interval
+
+  - id: C29
+    name: backpressure-bounded-buffer
+    trigger: producer and consumer rates can diverge across a buffer this process owns (send buffer to a slow client; fast queue into a slow worker via prefetch)
+    floor: transfer bounded by construction (small fixed payload) or rate mismatch impossible
+    ceiling: protocol-level flow control (gRPC, reactive streams, credit-based) when policy must be negotiated end-to-end (mode = negotiated flow control, not a local cap)
+    required:
+      - buffer high-water mark named
+      - policy at the mark explicit — block, drop, or disconnect
+      - consumer prefetch / max-in-flight cap configured where applicable
+      - slow-consumer behavior tested, not assumed
+    forbidden:
+      - unbounded_send_or_receive_buffer
+      - implicit_default_prefetch_unlimited
+      - memory_growth_proportional_to_slowest_client
+      - silent_drop_without_policy_or_signal
+    proof:
+      tests:
+        - slow_consumer_hits_policy_not_OOM
+        - high_water_mark_enforced
+        - prefetch_cap_respected_where_applicable
+
+  - id: C30
+    name: reauthz-long-lived-connection
+    trigger: a connection or session outlives the authz decision made at its start
+    floor: connection lifetime provably shorter than credential/permission validity — the handshake check suffices
+    ceiling: revocation-event push (introspection cache invalidation, pub/sub on permission change) when the polling interval is too coarse (mode = event-driven revocation, not periodic re-check)
+    required:
+      - re-validation interval named (the same way C06 names a timeout budget)
+      - principal re-checked periodically OR revocation events subscribed
+      - revoked or expired principal disconnected or downgraded within the interval
+      - per-message authz still applies where messages target resources (C15 is not replaced by this control)
+    forbidden:
+      - handshake_authz_treated_as_permanent
+      - token_expiry_ignored_after_upgrade
+      - revocation_takes_effect_only_on_reconnect
+    proof:
+      tests:
+        - revoked_mid_connection_disconnected_within_interval
+        - expired_token_terminates_connection
+
+  - id: C31
+    name: inbound-load-bound
+    trigger: endpoint accepts input whose rate, size, or concurrency the caller controls
+    floor: internal-only caller with capacity bounded by construction
+    ceiling: dedicated rate-limit / WAF tier when limits must be fleet-wide and attack-grade (mode = perimeter defense, not one app's budget)
+    required:
+      - max body/payload size named and enforced BEFORE buffering the payload
+      - rate limit per principal or source where abuse is plausible
+      - max concurrent requests/connections named
+      - each exceeded limit maps to a typed rejection (413/429/503), not a crash
+      - auth endpoints throttle failed attempts (brute-force guard)
+      - user-defined metadata (labels, annotations, JSONB blobs) bounded at the boundary — max key count, key length, value size — before storage or indexing (C46 merge; index exhaustion is inbound load wearing JSONB)
+    forbidden:
+      - unbounded_request_body
+      - login_without_failed_attempt_throttle
+      - limit_exceeded_produces_500_or_OOM
+      - buffering_entire_payload_before_size_check
+      - unbounded_user_metadata_accepted_or_indexed   # C46 merge
+    proof:
+      tests:
+        - oversize_body_rejected_413
+        - rate_exceeded_429
+        - brute_force_attempts_throttled
+        - metadata_over_key_limit_rejected_413_or_422
+
+  - id: C32
+    name: single-flight-lock
+    trigger: time-triggered or polled work may execute concurrently across instances or overlapping ticks
+    floor: provably single instance AND runtime provably shorter than the schedule interval; OR concurrent writers are lost-update-tolerant and serialize through an atomic whole-file swap (C33 governs the write) — last-write-wins is acceptable by design, so no lock is needed (the frecency/rank-store case: a dropped concurrent update costs one increment, not corruption)
+    ceiling: leader election when one of N instances must own a CONTINUOUS role (mode = standing leadership, not per-run exclusion). Distinct from C10, which locks a row to protect an invariant inside one transaction.
+    required:
+      - advisory lock or lease acquired before work starts
+      - lease carries a TTL; a crashed holder releases within bounded time
+      - contention behavior (skip vs wait) is an explicit recorded decision
+      - lock identity covers job name + schedule window
+    forbidden:
+      - overlapping_runs_unguarded
+      - lock_without_TTL
+      - second_instance_silently_doubles_work
+    proof:
+      tests:
+        - concurrent_trigger_one_winner
+        - crashed_holder_lease_expires
+        - contention_behavior_matches_recorded_decision
+
+  - id: C33
+    name: atomic-file-write
+    trigger: file written whose torn or partial state corrupts a later read (checkpoint, state file, generated config)
+    floor: output goes to stdout, or loss/corruption is acceptable (regenerable cache)
+    ceiling: WAL or embedded store (SQLite) when state needs transactions and concurrent readers, not single-blob replacement (mode = transactional state, not atomic swap)
+    required:
+      - write to a temp file on the SAME filesystem as the destination
+      - fsync before rename
+      - atomic rename over the destination
+      - reader validates the file on load (C01 — a state file is a trust boundary to your future self)
+    forbidden:
+      - in_place_overwrite_of_state_file
+      - rename_across_filesystems
+      - skip_fsync_then_rename
+    proof:
+      tests:
+        - kill_mid_write_leaves_old_state_intact
+        - corrupted_temp_never_promoted
+
+  - id: C34
+    name: correlation-state-expiry
+    trigger: process stores partial state correlating multiple messages or steps over time (aggregate buffers, saga instances, correlation rows)
+    floor: correlation completes within one message/request by construction — no stored partial state survives the handler
+    ceiling: durable workflow engine (Temporal-class) when timers, retries, and compensation across long horizons need a runtime, not one table's TTL (mode = durable execution platform)
+    required:
+      - completion condition explicit and named (count, predicate, or deadline)
+      - every stored partial aggregate or saga instance carries a TTL/deadline
+      - on-expiry decision explicit and named — emit-partial, park/DLQ, or drop-with-log
+      - the expiry sweep is itself scheduled work (C32 attaches if multi-instance)
+      - a chunk arriving AFTER expiry has a defined fate (drop-with-log or DLQ; never silent resurrection of the aggregate)
+    forbidden:
+      - unbounded_correlation_state          # conntrack table with timeouts disabled
+      - partial_aggregate_without_deadline
+      - stuck_saga_without_timeout_policy
+      - late_chunk_silently_recreates_expired_aggregate
+    proof:
+      tests:
+        - incomplete_aggregate_expires_with_named_policy
+        - late_chunk_after_expiry_handled
+        - stuck_saga_times_out_and_parks
+
+  # ───────────────────────── v0.7 additions ─────────────────────────
+  # C36, C39, C45, C46, C52 retired — see header changelog.
+
+  - id: C35
+    name: liveness-readiness-separation
+    trigger: process exposes health probes to an orchestrator, load balancer, or gateway
+    floor: short-lived process with no standing orchestrator or load balancer
+    ceiling: custom operator/controller when probe semantics must span pods (mode = fleet choreography, not one process's truth)
+    required:
+      - liveness answers ONLY "is this process beyond local recovery" (deadlock, blocked event loop, wedged threads) — never downstream health
+      - readiness answers "can this instance serve ANYTHING right now" — it checks only dependencies without which NO request can be served
+      - degraded-but-serving states stay ready; per-path fallback behavior is C43's decision, not readiness's
+      - probe handlers are cheap and do no real work (no business queries, no expensive checks)
+    forbidden:
+      - liveness_failing_on_downstream_timeout            # orchestrator kills a healthy pod because the database is slow — the restart fixes nothing and sheds capacity mid-incident
+      - fleet_wide_unreadiness_from_shared_dependency_blip # deep readiness on a shared dependency converts partial degradation into a total LB-drain outage
+      - probe_running_business_logic_or_expensive_queries
+    proof:
+      tests:
+        - downstream_timeout_fails_neither_liveness_nor_drains_the_fleet
+        - dependency_required_to_serve_anything_fails_readiness_only
+
+  - id: C37
+    name: async-resource-cleanup-guard
+    trigger: deleting a domain record that owns or references external state (cloud resources, third-party API objects, stored files)
+    floor: record owns nothing external — plain delete
+    ceiling: dedicated garbage-collection service when external resource volume needs its own pipeline (mode = GC at scale)
+    required:
+      - record marked with a tombstone/finalizer flag instead of hard deletion
+      - async worker performs the external teardown (C06/C07/C17 attach to it)
+      - local hard-delete happens ONLY after external teardown acks
+      - teardown is idempotent — redelivery re-runs it safely (C08)
+      - tombstoned rows have a retry sweep and an aging alert (a tombstone stuck for a week is an incident, not a backlog)
+    forbidden:
+      - hard_delete_before_external_cleanup        # dangling cloud resources billed forever, orphaned third-party objects
+      - inline_external_teardown_in_the_delete_handler   # C09/C11 violation wearing a new hat
+      - tombstoned_rows_without_retry_or_aging_alert
+    proof:
+      tests:
+        - external_teardown_failure_leaves_tombstone_for_retry
+        - hard_delete_only_after_external_ack
+
+  - id: C38
+    name: system-managed-state-isolation
+    trigger: mutation payload targets an entity that mixes user-configurable and system-managed fields (status, balances, timestamps, audit data)
+    floor: entity is 100% user-configurable
+    ceiling: CQRS command model where writes are pure commands and read models are separate (mode = full write/read segregation)
+    required:
+      - update DTO declares user-mutable fields ONLY — system-managed fields are absent from its shape (C01 owns the parse; this card owns the shape)
+      - system-managed fields mutated exclusively by domain logic or dedicated subresource endpoints
+      - unknown or system fields in the payload rejected or stripped per a recorded decision
+    forbidden:
+      - merging_raw_client_payload_into_entity
+      - trusting_client_provided_status_or_balance
+      - one_dto_shared_between_create_read_and_update
+    proof:
+      tests:
+        - client_attempt_to_set_system_field_handled_per_recorded_decision
+        - status_transition_reachable_only_through_domain_path
+
+  - id: C40
+    name: out-of-band-reconciliation
+    trigger: local store mirrors or syncs state with an external durable system (payment provider, search index, ERP)
+    floor: ephemeral cache where TTL naturally heals drift
+    ceiling: distributed consensus or two-phase commit when divergence is never acceptable (mode = atomic agreement, not eventual repair)
+    required:
+      - scheduled job periodically compares local state against the external source (the sweep classifies as scheduled_job — C32 attaches there)
+      - discrepancies auto-repaired or parked with an alert — a named policy either way
+      - tolerable staleness window named
+      - repair is idempotent
+    forbidden:
+      - webhooks_as_sole_long_term_integrity_mechanism   # a webhook is a hint, not a ledger — they drop, arrive twice, and arrive out of order
+      - silent_local_overwrite_without_audit_trail
+    proof:
+      tests:
+        - missing_or_divergent_record_detected_and_healed_or_parked
+        - repair_runs_twice_without_double_effect
+
+  - id: C41
+    name: fail-fast-startup-validation
+    trigger: process boot requires environment variables, secrets, or configuration
+    floor: stateless script taking all inputs as direct arguments
+    ceiling: remote/dynamic config explicitly designed for runtime toggling (mode = feature flags, not the boot contract)
+    required:
+      - all required config parsed and validated (C01 — a config source is a trust boundary to your future self) BEFORE binding a port or accepting work
+      - missing or invalid config exits non-zero immediately, naming the offending key
+      - scope is CONFIG ONLY — an unreachable dependency at boot is NOT fatal; that case is C48's not-ready path
+    forbidden:
+      - lazy_loading_required_config_inside_a_request_handler
+      - serving_traffic_with_critical_config_unvalidated
+      - crash_looping_on_unreachable_dependency_at_boot   # DB outage + restart policy = thundering recovery storm; C48 owns that case
+    proof:
+      tests:
+        - missing_critical_env_var_exits_nonzero_at_boot
+        - unreachable_dependency_at_boot_yields_not_ready_not_crash
+
+  - id: C42
+    name: cache-stampede-protection
+    trigger: expensive read is cached and accessed concurrently, so cold or expired misses can converge
+    floor: recomputation cheap enough that a full herd cannot hurt the source
+    ceiling: background/push refresh (materialized view) when clients must never compute on the miss path; fleet-wide single-flight needs a distributed lock or probabilistic early expiry (mode = cross-instance dedup)
+    required:
+      - per-process single-flight — one loader execution per key per miss; concurrent callers await the shared result
+      - loader failure propagates to all waiters as a typed failure (caching errors is a separate recorded decision)
+      - scope honesty — a process-local mutex bounds the herd to one query PER INSTANCE; the fleet-wide bound is either accepted (N instances = N queries) or built via the ceiling, recorded either way
+    forbidden:
+      - every_concurrent_miss_recomputing_the_same_key
+      - claiming_fleet_wide_protection_from_a_process_local_mutex
+    proof:
+      tests:
+        - concurrent_cold_misses_in_one_process_trigger_one_load
+        - loader_failure_propagates_to_all_waiters
+
+  - id: C43
+    name: explicit-fail-open-or-closed
+    trigger: request flow is gated by a synchronous third-party call (fraud check, policy service, enrichment, non-core logging)
+    floor: the third party IS the domain (payment via the PSP) — failure is closed by definition, nothing to declare
+    ceiling: sidecar/mesh policy when the fallback decision is infrastructure-owned (mode = platform policy, not app code)
+    required:
+      - timeout/failure fallback declared per integration — fail-open (proceed without the gate) or fail-closed (deny) — written down, not emergent from exception propagation
+      - fail-open paths emit a dedicated alert metric (a silent open gate is a security hole aging quietly)
+      - the decision records blast radius — what is lost when open, what is lost when closed
+    forbidden:
+      - fallback_behavior_emergent_from_exception_propagation
+      - non_critical_gate_timeout_failing_the_request_closed_by_accident
+      - fail_open_without_alert_metric
+    proof:
+      tests:
+        - gate_timeout_produces_the_declared_fallback
+        - fail_open_path_emits_alert_metric
+
+  - id: C44
+    name: monotonic-time-for-duration
+    trigger: code measures elapsed time, TTLs, or timeouts
+    floor: calendar semantics (billing dates, cron schedules) — wall-clock time is CORRECT there
+    ceiling: synchronized-clock infrastructure (TrueTime-class) when cross-node ordering needs it (mode = global ordering, not local duration)
+    required:
+      - durations measured with the monotonic clock (performance.now, time.monotonic, CLOCK_MONOTONIC)
+      - wall-clock used only where calendar meaning is required, as a recorded choice
+    forbidden:
+      - date_now_minus_date_now_for_durations   # one NTP step = a negative or multi-hour "elapsed" time
+      - mixing_clock_sources_in_one_calculation
+    proof:
+      review:
+        - monotonic_clock_for_every_timeout_and_ttl_measurement
+
+  - id: C47
+    name: immutable-configuration-state
+    trigger: process reads boot-time configuration that determines routing, credentials, or core behavior
+    floor: config served by a system explicitly built for hot reload (flag service) — that is the ceiling working as designed, not a violation
+    ceiling: immutable infrastructure where config change forces full container replacement (mode = replacement, not restart)
+    required:
+      - config loaded at boot is treated as immutable afterwards (frozen/readonly where the stack supports it)
+      - core config change requires process restart — never partial in-place mutation
+      - anything genuinely hot-reloadable is EXPLICITLY designated and isolated from boot config
+    forbidden:
+      - hot_reload_mutating_config_mid_request           # half-old half-new = partial state drift no test reproduces
+      - config_singleton_writable_from_application_code
+    proof:
+      review:
+        - config_readonly_after_boot
+        - restart_required_for_core_config_change
+
+  - id: C48
+    name: dependency-readiness-gate
+    trigger: process needs out-of-process connections (database, cache, broker, sidecar) before it can serve traffic
+    floor: completely standalone process with no network dependencies
+    ceiling: orchestrator dependency graphs (initContainers, systemd Requires) when start ordering is platform-owned (mode = platform sequencing)
+    required:
+      - critical dependencies verified before declaring ready (C35's readiness) or accepting work
+      - traffic arriving before readiness gets an immediate typed 503 — never a hang, never a crash
+      - boot-time dependency failure keeps the process ALIVE and not-ready, retrying with backoff (the deliberate inverse of C41's config crash)
+    forbidden:
+      - accepting_requests_while_connection_pools_initialize
+      - readiness_declared_before_dependency_verification
+      - boot_dependency_failure_crashing_the_process    # crash-loop storm exactly when the dependency is trying to recover
+    proof:
+      tests:
+        - request_during_boot_returns_503
+        - dependency_recovery_flips_ready_without_restart
+
+  - id: C49
+    name: stale-cursor-recovery
+    trigger: consumer resumes a stream, poll, or watch from a stored cursor, offset, or sequence id (Kafka offset, ResourceVersion, sync token)
+    floor: stateless page-1 reads with no resume semantics
+    ceiling: protocols with built-in resume and compaction negotiation (mode = protocol-owned recovery)
+    required:
+      - cursor rejection (compacted, expired, unknown) handled as a typed, EXPECTED outcome (C04/C05) — not a crash, not a transient error
+      - explicit fallback path — wipe local position, full resync from a defined origin
+      - every fallback emits an observable signal (metric/log); a resync storm is itself a symptom
+      - the gap is acknowledged — resuming from "latest" without recording what was skipped is silent data loss
+    forbidden:
+      - infinite_retry_loop_on_a_permanently_invalid_cursor
+      - cursor_rejection_classified_as_transient
+      - silent_data_gap_after_cursor_jump
+    proof:
+      tests:
+        - expired_cursor_triggers_full_resync_fallback
+        - resync_emits_observable_signal
+
+  - id: C50
+    name: dry-run-mutation-support
+    trigger: clients need to validate a complex state-machine mutation without side effects, and the endpoint explicitly opts in
+    floor: plain CRUD where C01 schema validation already answers the question
+    ceiling: isolated pre-production environment when validation needs production-shaped scale (mode = environment, not endpoint flag)
+    required:
+      - dryRun flag executes the FULL path — domain rules, policy checks, constraint checks — then rolls the transaction back
+      - every NON-transactional side effect gated behind the flag — external calls, emails, cache writes, outbox dispatch (the row rolls back, but a publisher mid-poll must not race it)
+      - dry-run cost bounded — it takes the same locks as the real path, so it is rate-limited (C31) or it is a DoS lever on hot rows
+      - honesty recorded — sequences burn, advisory locks contend; rollback is not invisibility
+    forbidden:
+      - dry_run_skipping_business_logic_and_returning_200
+      - dry_run_committing_anything
+      - dry_run_leaking_non_transactional_side_effects   # the email that "didn't happen"
+      - dry_run_unthrottled_on_contended_rows
+    proof:
+      tests:
+        - dry_run_returns_domain_validation_errors
+        - dry_run_leaves_database_and_outbox_unchanged
+        - dry_run_sends_no_external_calls
+
+  - id: C51
+    name: state-machine-hysteresis
+    trigger: system automatically adjusts capacity, prices, or limits in response to high-frequency signals
+    floor: human-approved or low-frequency (daily cron) adjustments
+    ceiling: control-theory damping (PID-class) when oscillation must be mathematically bounded (mode = modeled control loop)
+    required:
+      - cooldown named per direction (e.g. no scale-down for N minutes after a scale-up)
+      - reversal attempted inside the cooldown is rejected and logged, not queued for later
+      - one evaluator at a time (C32 owns the exclusion)
+    forbidden:
+      - instant_reaction_to_every_signal_fluctuation    # thrash — flapping costs more than lag
+      - cooldown_bypassed_by_concurrent_evaluators
+    proof:
+      tests:
+        - state_reversal_blocked_during_cooldown_window
+
+  - id: C53
+    name: request-priority-tiering
+    trigger: one chokepoint processes mixed-criticality work AND load shedding exists (C29 backpressure or C31 limits)
+    floor: uniform business value — nothing to tier
+    ceiling: platform QoS (pod priority and preemption) when tiering is infrastructure-owned (mode = scheduler-level QoS)
+    required:
+      - work tagged with an explicit priority tier at entry (Critical / BestEffort at minimum)
+      - shedding order wired into C29's policy and C31's rejections — BestEffort drops or delays before Critical
+      - tier of shed work visible in metrics
+    forbidden:
+      - checkout_dropped_because_the_queue_is_full_of_analytics
+      - priority_field_present_but_ignored_by_the_shedding_path
+    proof:
+      tests:
+        - under_load_best_effort_rejected_while_critical_succeeds
+
+  - id: C54
+    name: immutable-asset-references
+    trigger: critical path stores references to external artifacts (container images, CDN files, ML models)
+    floor: static assets where cache-busting (?v=) suffices
+    ceiling: content-addressable storage where the reference IS the hash (mode = CAS)
+    required:
+      - references pin immutable identifiers (digest, content hash) — never floating tags
+      - tag-to-digest resolution happens at build/deploy time and is recorded
+    forbidden:
+      - latest_or_mutable_tag_in_a_critical_path     # a third party overwrites the tag and your deploy silently changes under you
+      - runtime_resolution_of_floating_tags
+    proof:
+      review:
+        - external_artifacts_pinned_by_digest_not_tag
+
+  - id: C55
+    name: bounded-metric-cardinality
+    trigger: time-series metric (counter, gauge, histogram) emitted with dimensional labels
+    floor: local dev stdout logging where cardinality cannot exhaust anything
+    ceiling: wide-event observability stores (Honeycomb-class) explicitly built for high cardinality (mode = tracing/events, not aggregated series)
+    required:
+      - every label's value set is bounded and known in advance (route TEMPLATE, status class, enum variant)
+      - dynamic identifiers (user id, raw path, IP, UUID, error text) stripped or mapped to a bounded category before emission
+      - label review is part of adding any metric — cardinality is a one-line mistake with an observability-plane blast radius
+    forbidden:
+      - unbounded_identifier_in_a_metric_label   # one user_id label = millions of series = the metrics store OOMs and you are blind during the incident it caused
+      - raw_request_path_as_label                # /users/123 instead of /users/:id
+      - error_message_text_as_label
+    proof:
+      tests:
+        - emission_normalizes_dynamic_path_segments
+      review:
+        - every_label_maps_to_a_bounded_value_set
+
+  - id: C56
+    name: downstream-cancellation-propagation
+    trigger: synchronous request flow performs long-running downstream IO and the requester can vanish (disconnect, navigate away, timeout upstream)
+    floor: sub-5ms atomic operations where cancellation machinery costs more than completion
+    ceiling: async_job_worker — work that must finish regardless of the requester is the TIME seam's territory, not a cancellation problem (mode = durable execution)
+    required:
+      - the C16 context's cancellation token reaches every network/DB client — C16 CARRIES it, this card makes clients HONOR it
+      - downstream query/connection physically aborted when the token fires
+      - point of no return respected — once the transaction commits (or C11's floor path has begun its commit-then-call), cancellation is IGNORED; partial-effect prevention outranks resource reclaim (C11's outbox makes this atomic by construction)
+    forbidden:
+      - orphaned_query_running_after_client_disconnect   # the bored user refreshes 10 times = 10 expensive queries for nobody, starving real traffic
+      - swallowing_cancellation_to_force_completion_on_the_read_path
+      - honoring_cancellation_between_commit_and_durable_handoff
+    proof:
+      tests:
+        - client_disconnect_aborts_downstream_query
+        - cancellation_after_commit_does_not_tear_the_effect
+
+  - id: C57
+    name: ephemeral-disk-cleanup-guarantee
+    trigger: request or job stages data on local disk (temp files for transforms, uploads, renders, exports)
+    floor: pure in-memory streaming — nothing touches the filesystem
+    ceiling: per-invocation ephemeral filesystems (Lambda-class) destroyed by the platform (mode = platform-owned lifecycle)
+    required:
+      - temp files created under the OS temp directory with unique names
+      - deletion guaranteed by finalizer (defer/finally) on EVERY exit path — success, domain error, timeout, panic
+      - concurrent staged volume bounded — max staged bytes named (C31's disk cousin)
+    forbidden:
+      - temp_file_leaked_on_handled_domain_error    # the early 400 return that skips cleanup; weeks later DiskPressure evicts healthy pods
+      - cleanup_delegated_to_external_cron
+      - unbounded_concurrent_staging
+    proof:
+      tests:
+        - domain_error_mid_processing_still_unlinks_temp_file
+        - timeout_path_unlinks_temp_file
+
+  - id: C58
+    name: mandatory-pagination-bound
+    trigger: query targets a collection whose size grows with user activity or time, OUTSIDE a C23-governed list endpoint (workers, jobs, internal reads, admin paths)
+    floor: fixed-size-by-design tables (config, enums, US states); list endpoints whose C23 max limit is already enforced at the driver
+    ceiling: streaming drivers / map-reduce pipelines explicitly built for unbounded extraction (mode = batch pipeline, not one query)
+    required:
+      - hard numeric LIMIT at the SQL/driver level — the bound lives where the bytes are produced, not in app-code hope
+      - full-collection processing uses keyset/cursor batching or a streaming driver, never one materialized result set
+      - relation to C23 recorded — the edge envelope's max limit COMPILES DOWN to this; C23 without a driver-level bound is a promise without a mechanism
+    forbidden:
+      - select_star_into_process_memory_from_a_growing_table   # works in dev, works in prod for a year, OOMKills on the 10000th user
+      - loop_over_unbounded_result_set_without_streaming
+    proof:
+      tests:
+        - unbounded_internal_query_enforces_system_hard_limit
+        - full_scan_path_batches_with_bounded_memory

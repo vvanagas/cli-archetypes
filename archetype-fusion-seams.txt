@@ -14,11 +14,11 @@ controls_referenced: [C01, C04, C05, C06, C08, C09, C10, C11, C12, C13,
                       C35, C41, C47, C48]
 fusion_invariant_candidates: [single-exit-owner, single-lock-owner]
 
-# PUBLICATION NOTE (draft): the two catalog dependencies above
-# (server-archetype-control-map.txt >= v0.9, server-controls.txt v0.9) are
-# not yet published — control ids (C01..C48) are therefore forward
-# references. Each seam's annotations carry enough per-control meaning to
-# be usable standalone; the full catalog follows in a later release.
+# PUBLICATION NOTE (draft): both catalog dependencies are published as
+# siblings in this repository (server-archetype-control-map.txt v0.9,
+# server-controls.txt v0.9) — the depends_on pins above are satisfied.
+# Still-unpublished cross-references (web/async seam layers, the client
+# corpus, the open-issues ledger) are noted in the siblings' own headers.
 
 # CHANGES FROM v0.3
 #  - controls_referenced COMPLETED. The header claims to be the manifest a
