@@ -28,10 +28,16 @@ spot, both found via [modd](https://github.com/cortesi/modd), built and run).
 ## Known draft gaps
 
 - `archetype-fusion-seams.txt` references a control **catalog**
-  (`server-controls.txt`, ids C01–C33) and per-archetype **control cards**
-  (`server-archetype-control-map.txt`) that are not yet published. The
-  seam annotations carry enough per-control meaning to be usable standalone;
-  the catalog follows in a later release.
+  (`server-controls.txt` v0.9, ids C01..C48) and per-archetype **control
+  cards** (`server-archetype-control-map.txt` v0.9) that are not yet
+  published. The seam annotations carry enough per-control meaning to be
+  usable standalone; the catalog follows in a later release.
+- Known ledger item on the catalog side: five referenced controls
+  (C08-C11, C50) are flagged as web/DB-plane-coupled (their proofs assume
+  SQL transactions / outbox tables), pending a generic-obligation /
+  surface-proof split. For file-state CLIs, C33 (atomic write) and C19
+  transfer cleanly; read the STATE seam's C08-C11 mentions with that in
+  mind.
 - The "CONSOLE UTILITY DESIGN reference document" both companions cite is
   the unpublished source text these files were dissected from.
 

@@ -1,6 +1,6 @@
 CLI SINGLE-TOOL FUSION SEAMS — DETECTION LAYER OVER PART A
 =========================================================
-version: 0.3
+version: 0.4
 kind: cli_fusion_seams
 depends_on:
   archetype-stage-dissection.txt    side-effect-boundary rename (FIX 1) +
@@ -10,14 +10,32 @@ depends_on:
                                     conditional triggers referenced below
   server-controls.txt               catalog carrying every control id listed
 controls_referenced: [C01, C04, C05, C06, C08, C09, C10, C11, C12, C13,
-                      C16, C17, C18, C19, C25, C27, C32, C33]
+                      C16, C17, C18, C19, C20, C25, C27, C30, C32, C33,
+                      C35, C41, C47, C48]
 fusion_invariant_candidates: [single-exit-owner, single-lock-owner]
 
 # PUBLICATION NOTE (draft): the two catalog dependencies above
-# (server-archetype-control-map.txt, server-controls.txt) are not yet
-# published — control ids (C01..C33) are therefore forward references.
-# Each seam's annotations carry enough per-control meaning to be usable
-# standalone; the full catalog follows in a later release.
+# (server-archetype-control-map.txt >= v0.9, server-controls.txt v0.9) are
+# not yet published — control ids (C01..C48) are therefore forward
+# references. Each seam's annotations carry enough per-control meaning to
+# be usable standalone; the full catalog follows in a later release.
+
+# CHANGES FROM v0.3
+#  - controls_referenced COMPLETED. The header claims to be the manifest a
+#    consistency check reads, but omitted six ids the body cites: C20 (smell
+#    #5 + SPAWN "C20 adjacent"), C30 (RACE note), C35/C48 (LOOP health split),
+#    C41/C47 (LOOP daemon defaults). Derived by grep-diff of every C-id token
+#    in the body against the list, NOT by hand — the hand list missed C20.
+#    All six exist in server-controls.txt v0.9; incomplete manifest, not
+#    dangling refs. The file's own HAZARD 1 (a guard that doesn't guard) had
+#    turned on its own header.
+#  - NOTE: server-controls.txt v0.9 EXTENDED two floors this file paraphrases
+#    — C32 (lost-update-tolerant atomic-swap / last-write-wins, the zoxide
+#    case) and C06 (supervised long-lived child, the modd/watchexec case).
+#    The STATE/SPAWN floor lines here stay illustrative; per one_relation_one
+#    _home the catalog floors govern. Surfaced by the zoxide + modd worked
+#    examples (adversarial scan targets).
+#  - No seam recipes, stage assignments, or forced-trigger names changed.
 
 # CHANGES FROM v0.2
 #  - single-exit-owner candidate: BLIND SPOT recorded. The invariant as
