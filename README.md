@@ -1,5 +1,38 @@
 # CLI Archetypes, Stages & Fusion Seams
 
+Every CLI invocation — and every HTTP request, and every daemon event —
+passes through the same **12-stage pipeline**. Six CLI archetypes light
+those stages up differently, and that difference is the whole model:
+
+| # | Stage | In a CLI |
+|---|-------|----------|
+| 1 | Transport accept | argv + stdin — or, for a daemon, **events** (timer/signal/socket/inotify): modeling a daemon as "a CLI that loops" is the signature anti-pattern |
+| 2 | Parse | argv→flags; bytes→tree; plan-file→step graph — dominant for transformers and orchestrators |
+| 3 | Routing | subcommand → operation; event type → handler |
+| 4 | Pre-handler middleware | client/auth setup; **lock acquisition** (skip it in a stateful CLI = corruption); signal handlers; daemon bootstrap |
+| 5 | Binding | parsed values → typed options: the "legal invocation" contract; a wrapper's flag-translation lives here |
+| 6 | Validation | three kinds: 6a bad flags (fail before reading stdin) · 6b malformed input (the parser IS the validator) · 6c schema/rules — which exists only if the tool is partly a validator |
+| 7 | Authorization | almost always **remoted** (the far API/IAM enforces; you map the 403) or dropped — ops tools rarely authorize locally |
+| 8 | Handler | the thin edge→core connector — **never load-bearing, in any archetype**; a fat handler is a defect everywhere |
+| 9 | Application service | spawn + child lifecycle (wrapper); the graph executor (orchestrator); plan→apply with checkpoints (stateful) |
+| 10 | Domain | the decision logic: the transform, the evaluation rules, the diff — and deliberately **near-empty for a wrapper** (growth here = reimplementing the child) |
+| 11 | Side-effect boundary | the state DB; the spawned child; the remote query; cross-event daemon state (bounded, or leaks kill the process over days) |
+| 12 | Response shaping | stdout = data, stderr = logs (or `tool \| jq` breaks); **semantic exit codes — for a checker, the exit code IS the product** |
+
+Cross-cutting all twelve: **error mapping** (distinct exit code per failure
+class — "it's broken" ≠ "couldn't check"), **observability**, and
+**transaction scope** (many short transactions, never one long one wrapping
+network I/O).
+
+An archetype is which stages dominate, which collapse, and which invert —
+the per-stage verdict for all six is `archetype-stage-dissection.txt`; the
+principle and the full stage semantics are in `FOUNDATIONS.md`. And the
+stages are a checklist for *thinking*, not a directory layout: a stage
+becomes a module only when it has its own policy, failure modes, tests, or
+swappable implementation ("present is not a module").
+
+## Why you might care, concretely
+
 Your deploy tool exits `1` when the deploy failed. It also exits `1` when it
 couldn't reach the API. Your CI pipeline cannot tell "production is drifted"
 from "the checker is broken" — and nobody notices until the wrong one pages
