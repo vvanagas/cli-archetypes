@@ -85,6 +85,7 @@ torn-write) in a green-suite, TDD-built gating tool in under ten minutes —
 | `archetype-fusion-seams.txt` | The detection layer: every CLI fusion is a stack of FOUR seams (VERDICT, STATE, SPAWN, ROLLUP). Smell list → seam → the controls the seam forces → how to check them. |
 | `server-archetype-control-map.txt` | The control map (v0.9): per-archetype cards — web AND CLI — with default / conditional / forbidden control attachments and named triggers. |
 | `server-controls.txt` | The control catalog (v0.9): every C-id with its obligation, its floor (when it may legitimately be dropped), and its behavioral proof — the engine the seams file resolves against. |
+| `FOUNDATIONS.md` | The principle, the 12 stages with full semantics, the marker system, "present is not a module", and the archetype test — distilled from the corpus into one primer. |
 | `examples/worked-audit.md` | A complete audit walkthrough: classify → grep → checklist → verdict. |
 | `skills/` | Drop-in agent instructions for Claude Code and Codex — see below. |
 
