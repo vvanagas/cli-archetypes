@@ -2,11 +2,11 @@ version: 0.9
 kind: archetype_control_map
 
 # PUBLICATION NOTE (draft): this map and server-controls.txt (sibling) are
-# published together with the CLI trio. Cross-references to
-# server-corpus-open-issues.txt (the maintainers' falsification ledger),
-# server-web-archetype-fusions.txt / server-async-archetype-fusions.txt
-# (the web/async seam layers), and the client corpus (CL* ids) are not yet
-# published and are forward references.
+# published together with the CLI trio. The open-issues ledger
+# (server-corpus-open-issues.txt) is published as a sibling.
+# Cross-references to server-web-archetype-fusions.txt /
+# server-async-archetype-fusions.txt (the web/async seam layers) and the
+# client corpus (CL* ids) are not yet published and are forward references.
 
 # CHANGES FROM v0.8
 #
