@@ -1,0 +1,516 @@
+CLI SINGLE-TOOL FUSION SEAMS — DETECTION LAYER OVER PART A
+=========================================================
+version: 0.3
+kind: cli_fusion_seams
+depends_on:
+  archetype-stage-dissection.txt    side-effect-boundary rename (FIX 1) +
+                                    "present is not a module" (RULE 1)
+  archetype-combinations.txt        Part A pairs A1-A6; Part B B1/B2/B4
+  server-archetype-control-map.txt  >= v0.9 cli_* cards + the named
+                                    conditional triggers referenced below
+  server-controls.txt               catalog carrying every control id listed
+controls_referenced: [C01, C04, C05, C06, C08, C09, C10, C11, C12, C13,
+                      C16, C17, C18, C19, C25, C27, C32, C33]
+fusion_invariant_candidates: [single-exit-owner, single-lock-owner]
+
+# PUBLICATION NOTE (draft): the two catalog dependencies above
+# (server-archetype-control-map.txt, server-controls.txt) are not yet
+# published — control ids (C01..C33) are therefore forward references.
+# Each seam's annotations carry enough per-control meaning to be usable
+# standalone; the full catalog follows in a later release.
+
+# CHANGES FROM v0.2
+#  - single-exit-owner candidate: BLIND SPOT recorded. The invariant as
+#    written catches COLLISION (two exit owners) but PASSES a single owner
+#    that always exits the same code. Found by the modd worked example
+#    (MODD fusion_dissection v1.0, github.com/cortesi/modd, built+run): one
+#    clean exit owner whose primary path always exits 0 satisfies the
+#    structural check while silently reporting success on every failure.
+#    Resolution: promote C05-CO-REQUIRED, never standalone. Structural
+#    single-owner grep alone is necessary, not sufficient.
+#  - No seam recipes, control ids, floors, or stage assignments changed.
+#    Annotation-only bump; depends_on pins and controls_referenced unchanged.
+
+# CHANGES FROM v0.1
+#  - Header ADDED: version/kind/depends_on/controls_referenced so a
+#    consistency check can verify (a) each sibling file is at its minimum
+#    concept version and (b) every control id still exists in the catalog.
+#    v0.1 named siblings in prose and pinned nothing — its own HAZARD 1
+#    (a brick whose references nothing enforces) turned on itself.
+#  - seam_critical blocks ADDED per seam. They POINT at the cli_* cards'
+#    existing conditional triggers; they do NOT re-list controls. Re-listing
+#    would be the third-home drift the async v0.1->v0.3 rewrite removed.
+#  - Forbiddens ANNOTATED with the control each one is the negative of, so
+#    "what not to do" closes the loop with "what must be present."
+#  - FUSION-INVARIANT CONTROLS section ADDED: the two cross-layer invariants
+#    no single card can express, recorded as candidates (not promoted).
+#  - HOW TO CHECK A FUSION procedure ADDED: classify -> attach -> fire
+#    triggers -> floor_drop -> structural now / behavioral by test-id.
+#  - Detection smells now tag the control/invariant each implicates.
+
+
+Why this layer exists
+  Part A lists six fusions by exemplar — terraform, kubectl get, alembic,
+  node_exporter, k9s, make. Six named pairs are easy to recognize and
+  useless for the tool in front of you that matches none. Six base
+  archetypes give 6x6 nameable pairs, most nonsense. The pair is not the
+  unit of detection. The SEAM is. There are four, and they STACK.
+
+  The hard part is not structuring a known fusion; it is NOTICING you have
+  one, then knowing WHICH CONTROLS the seam forces and whether they are in
+  place. Detection without that second half is a vibe. This file does both:
+  it names the seam, and for each seam it names the controls the seam forces
+  and how to check them.
+
+
+==============================================================
+GOVERNING RULES
+==============================================================
+
+classify_by_seam_not_by_pair
+  Almost every CLI fusion is one of FOUR seam types between two archetypes.
+  One recipe per seam, not per pair. A combo is a seam instantiated on a
+  pair, then stacked.
+
+seams_stack  (the CLI divergence from the web guide)
+  Web requests usually cross ONE seam ("stop at first yes"). CLI fusions
+  routinely cross several in one binary — terraform crosses three. The CLI
+  guide is a CHECKLIST: check all four, apply each present seam's recipe.
+  Composition is re-application, never a combined recipe.
+
+most_tools_are_not_fusions
+  Plain transformer/checker/wrapper are single-archetype; main() handles
+  them. Reaching for a seam recipe on a plain stdin->stdout filter or a
+  passthrough `kubectl get` means you misclassified.
+
+controls_resolve_by_classification   (the recognition mechanism — read this)
+  A seam introduces almost no controls of its own. Recognition is:
+  classify BOTH layers correctly -> each card's DEFAULTS attach for free ->
+  the FUSION fires a few named conditional triggers a single-archetype tool
+  would skip -> floor_drop prunes -> check STRUCTURAL controls statically
+  every build, BEHAVIORAL controls via the catalog's proof.tests by id. The
+  seam file POINTS at triggers; it never re-lists controls. The only
+  genuinely new controls a fusion needs are CROSS-LAYER invariants no single
+  card can see (see FUSION-INVARIANT CONTROLS).
+
+one_relation_one_home
+  This file does not re-list A1-A6 (combinations), per-stage semantics
+  (dissection), or control bodies (controls). If it disagrees with those,
+  they win and this file has a bug.
+
+vocabulary
+  Stage 11 is the SIDE-EFFECT BOUNDARY (dissection FIX 1), not "persistence."
+  "Present is not a module" holds: a seam names a translation point, not
+  necessarily a file.
+
+
+==============================================================
+DETECTION FIRST — THE SMELLS  (each -> a seam and the control it implicates)
+==============================================================
+
+  1. EXIT-CODE OVERLOAD. `exit 1` must mean two things ("unhealthy" AND
+     "couldn't connect"; "step failed" AND "bad flags").
+        -> VERDICT   [C05 violated / single-exit-owner]
+  2. A SECOND LOCK / SECOND STATE FILE upstream already exists.
+        -> STATE     [single-lock-owner / C10]
+  3. REGEX ON YOUR OWN CHILD'S STDOUT; the contract is prose.
+        -> SPAWN     [C01 missing — use a structured mode]
+  4. THE "ONE MORE FLAG" THAT GATES. `--fail-if`, `--check`, `--dry-run`
+     changes the exit meaning.
+        -> VERDICT (getter grows a checker) or STATE (mutator grows plan/apply)
+  5. A WRAPPER'S DOMAIN LAYER GROWING — reimplementing the child.
+        -> SPAWN     [fat-domain forbidden; C20 adjacent]
+  6. A POLL/REFRESH LOOP AROUND A ONE-SHOT (`while true; sleep N`).
+        -> VERDICT-in-loop (LOOP note) + the five daemon UNDER-stages
+  7. "WORKS IN THE PIPE, BREAKS WHEN I TEST $?".
+        -> VERDICT across a process boundary; pipefail (Part B) [C12/C13]
+  8. PARTIAL SUCCESS HAS NO VOCABULARY (binary exit, "3 of 10 failed"
+     unrepresentable).
+        -> ROLLUP    [C04 missing]
+  9. DRY-RUN THAT CAN'T BE DRY — side-effect wired into domain, not behind
+     a port.
+        -> STATE/SPAWN [C17 missing]
+
+
+==============================================================
+THE FOUR SEAMS
+==============================================================
+
+
+SEAM 1 — VERDICT     (exit-code ownership and translation)
+----------------------------------------------------------
+Trigger: two archetypes both have an opinion about the process exit code;
+  or an inner whose PRODUCT is an exit code (a checker) is hosted by an
+  outer that owns the exit differently — or has no exit at all.
+
+Shape: outer owns stage 12 (response + the real exit code); the inner's
+  verdict is surrendered and re-expressed as DATA.
+
+Stage ownership: stage 12 has ONE owner — the outer. The inner checker's
+  "0/1/2/3" instinct is given up; the verdict becomes a FIELD (--format
+  json), a METRIC (probe_success=0), a per-step RESULT, or a UI pane state.
+  The inner keeps stage 10 (its rules) and emits a verdict VALUE, never an
+  exit.
+
+The translation point: "this archetype's natural exit code" -> "the outer's
+  idiom." checker-in-wrapper (A2): call-failed and thing-unhealthy must be
+  DIFFERENT codes, designed, not inherited. checker-in-daemon (A4): no exit;
+  unreachable is a metric value. checker-in-TUI (A5): no exit; pane state.
+
+Floor: if the inner has no outcome class distinct from the outer's
+  success/failure, there is no verdict seam. Plain `kubectl get` is
+  wrapper-only; the verdict appears only when you add gating.
+
+Forbidden -> control:
+  - one exit code carrying two outcome classes        -> C05 violated
+  - inner calls exit()/process.exit inside the host   -> single-exit-owner
+  - inheriting child/API success as the verdict       -> C05 (the unreachable-
+                                                         vs-unhealthy split)
+
+seam_critical (VERDICT):
+  resolves_by: classify the exit-OWNING layer. cli_invoker / cli_orchestrator
+    carry C05, C13, C12 as DEFAULTS — present by classification, not forced
+    by the seam.
+  forced_trigger:
+    verdict_requires_recoverable_branching   -> C04   # inner has 2+ recoverable outcomes
+  check:
+    structural: single-exit-owner [INVARIANT, candidate]; C12 (no logger
+      writes stdout — grep)
+    behavioral (catalog proof.tests by id): C05 (each outcome class -> a
+      distinct asserted exit code); C13 (documented codes match the mapping)
+
+Appears in: A2, A4, A5; across the pipe in B1 (pipefail decides survival).
+
+Map note: the control map merges cli_wrapper + cli_status_checker into
+  cli_invoker, the flavors differing exactly by verdict-branching (C04). That
+  difference IS this seam — the merge encodes the boundary as the VERDICT seam.
+
+
+SEAM 2 — STATE      (lock + durable-state ownership)
+----------------------------------------------------
+Trigger: an inner does mutating work inside an outer that owns a state
+  file / state DB and a lock.
+
+Shape: outer = cli_stateful (or migration host); inner = orchestrator /
+  wrapper / migration step. CLI twin of the web TIME-seam EXCEPTION: the
+  pipeline is not split — the durable boundary is OWNED by the outer; the
+  inner instantiates work against it.
+
+Stage ownership (the inversion): the OUTER owns stage 4 (lock) AND stage 11
+  (side-effect boundary = state DB) AND the transaction discipline. The inner
+  owns stage 9/10 but its effects become CHECKPOINTED sub-writes into the
+  outer's state, not its own store. Stage 11 has one owner — the outer —
+  which is why a second state file (smell #2) is corruption waiting.
+
+Owns-crosscutting: the lock wraps the ENTIRE inner run (coarse); the writes
+  are MANY SHORT transactions (fine), intent-before / completion-after.
+  Never one long transaction over the inner's network I/O.
+
+The translation point: the inner's "I did a thing" -> "a durable checkpoint
+  the outer can resume from." Migration apply -> run-tracking row written
+  AFTER the side effect (A3). Per-resource apply -> partial-state write so
+  --resume works (A1).
+
+Floor: no concurrency + no resumable state = no lock, no state file. If the
+  inner is idempotent and order-tolerant, re-run from the top instead of
+  checkpointing. C32's floor: provably single instance AND runtime < interval
+  => no lock.
+
+Forbidden -> control:
+  - two locks (inner grabs its own while the outer holds one)  -> single-lock-owner
+  - two state stores unreconciled (A3 trap)                    -> C10 / design
+  - one long tx wrapping the inner's external I/O              -> C09 violated
+  - completion/run-tracking row BEFORE the side effect commits -> C11 ordering
+  - in-place overwrite of the state file                       -> C33
+
+seam_critical (STATE):
+  resolves_by: classify the OUTER as cli_stateful. Its DEFAULTS carry the
+    bulk: C08, C09, C10, C19, C33. The seam adds nothing classification
+    didn't.
+  forced_triggers:
+    concurrent_invocation_possible      -> C32   # cron/parallel runs
+    external_call_after_state_change    -> C11   # effect, then record (outbox/WAL)
+    long_running_and_interruptible      -> C27   # checkpoint on SIGTERM, if applicable
+  check:
+    structural: single-lock-owner [INVARIANT, candidate]; C33 (temp-write +
+      fsync + atomic rename, no in-place — grep/AST); C17 (side-effect behind
+      a port, else dry-run can't be dry)
+    behavioral (catalog proof.tests by id): C33 (kill_mid_write_leaves_old_
+      state_intact); C32 (concurrent_trigger_one_winner; crashed_holder_lease
+      _expires); C10 under C19 (invariant holds under the lock, real store)
+
+Appears in: A1 (stateful owns lock+state; orchestrator+wrapper inner), A3
+  (stateful owns run-tracking; migration inner), A6 (the build cache is this
+  seam's side-effect boundary under-built — the stale-cache hazard).
+
+
+SEAM 3 — SPAWN      (child-process / external-tool boundary)
+------------------------------------------------------------
+Trigger: the tool spawns a child or calls a remote tool/API and consumes
+  its result. The child's stdout/stderr/exit is the contract.
+
+Shape: host (any archetype) > wrapper-flavor inner. The child IS the
+  side-effect boundary (stage 11). Its RESPONSE re-enters the host as
+  untrusted input.
+
+Stage ownership: the child occupies the inner's stage 11; its response
+  re-enters at the host's stage 6 (re-validate — re-entry is a trust
+  boundary). The host owns stage 12 (relay or remap the exit, per VERDICT).
+
+Owns-crosscutting: the host owns the child lifecycle (spawn, wait, timeout,
+  capture, relay), the timeout (C06), and the exit translation (passthrough
+  default; remap deliberately, documented). The child owns its own work.
+
+The translation point: child exit/stdout -> the host's idiom. Default:
+  passthrough. Deliberate: remap. The child's stdout is data to
+  parse-or-relay, never trust blind.
+
+Floor: if a LIBRARY CALL replaces the subprocess, the seam DISAPPEARS — do
+  not shell out to curl/jq/aws from a program that already has the client.
+  Shelling out is legitimate when the child IS the real tool you must not
+  reimplement (gh calling git), but it imports parsing, exit translation,
+  PATH/version drift. Choose it for reuse, not laziness.
+
+Forbidden -> control:
+  - reimplementing the child in the host's domain layer  -> design (C20 adjacent)
+  - regex on the child's HUMAN stdout                     -> C01 (use --format json)
+  - no timeout on the child                               -> C06
+  - trusting the child's stdout unvalidated               -> C01 (re-entry boundary)
+  - host logs polluting the relayed child stdout          -> C12
+
+seam_critical (SPAWN):
+  resolves_by: classify the SPAWNING layer as cli_invoker -> defaults C01
+    (here: re-validate child output), C05, C06, C17. If the spawner is a
+    transformer that shells out, C06+C17 arrive via its external_IO trigger.
+  forced_trigger:
+    handles_secret_token_or_credential   -> C25   # creds to the child not logged/echoed
+  check:
+    structural: C17 (child behind a port — else unstubbable, smell #9 —
+      grep/AST); C12 (host->stderr, child stdout relayed clean); fat-domain
+      (host stage-10 LOC bound — design review, C20 adjacent)
+    behavioral (catalog proof.tests by id): C06 (hung-child times out); C01
+      (malformed child output rejected); C18 (child stubbed in a vertical slice)
+
+Appears in: A1 (each resource a provider/API call), A2 (wrapper spawns/
+  queries), A5 (keypress spawns the real CLI), B1/B2 (across the pipe;
+  pipefail governs).
+
+
+SEAM 4 — ROLLUP     (split-and-rejoin; the N-ary VERDICT)
+---------------------------------------------------------
+Trigger: one invocation drives N sub-operations whose N independent results
+  must join into ONE exit code and one report under an explicit
+  partial-failure policy.
+
+Relation to VERDICT: the N->1 specialization, stated separately because the
+  JOIN POLICY (fail-fast vs continue-on-error vs threshold) is substantial new
+  content — the way the async doc states correlation/compensation though the
+  saga forward path is "the TIME seam iterated." CLI twin of web fan_out.
+
+Shape: outer = cli_orchestrator (or any host running N sub-ops); inner = N
+  sub-operations, possibly mixed archetype.
+
+Stage ownership: the orchestrator owns stage 9 as split/join orchestration
+  and stage 12 as the rollup + single exit code. Its stage 10 is thin
+  (scheduling, dep resolution). Each sub-op is a complete inner pipeline,
+  very often its own SPAWN.
+
+Owns-crosscutting: the orchestrator owns the overall exit policy, the
+  partial-failure policy (which failures are fatal), and the machine-readable
+  rollup (JUnit/JSON). Each sub-op owns its own result and SPAWN seam.
+
+The translation point: N "passed/failed" -> one "succeeded / partially
+  succeeded / failed" + one exit code. A 0/1 channel cannot express "3 of 10
+  failed" or idempotent "changed/ok/failed"; you need rich exit codes (the
+  checker discipline) or structured stdout. ROLLUP needs VERDICT done right.
+
+Floor: N=1 is not rollup — it is a passthrough/wrapper. Do not build
+  graph/join machinery for one sub-op. Independent sub-ops parallelize;
+  sequential calls for independent work stack latency.
+
+Forbidden -> control:
+  - partial failure collapsed into a binary exit, no detail  -> C04 missing
+  - one failed sub-op crashing the run under continue policy -> C04 / error mapping
+  - fail-fast vs continue-on-error left implicit             -> design (name it)
+  - one global transaction over the whole run                -> C09 (per-step, never global)
+  - sequential execution of independent sub-ops              -> design (latency)
+
+seam_critical (ROLLUP):
+  resolves_by: classify the OUTER as cli_orchestrator. Its DEFAULTS carry the
+    bulk: C04, C05, C13, C16, C17.
+  forced_triggers:
+    external_step_IO            -> C06              # per-step timeout < total budget
+    persisted_run_state         -> C08, C09, C19, C33   # if --resume
+    concurrent_invocation_possible -> C32           # cron-fired overlap
+  check:
+    structural: C04 (partial outcome is a typed result, not a thrown crash —
+      AST); per-step timeout shorter than the run budget
+    behavioral (catalog proof.tests by id): C04/C05 (partial-failure path ->
+      the policy's exit code); C08/C19 (a re-run skips completed steps)
+
+Appears in: A1 (orchestrator middle: N resources), A6 (orchestrator outer),
+  B2 (orchestrator over external step processes).
+
+
+==============================================================
+FUSION-INVARIANT CONTROLS — CANDIDATES, NOT YET PROMOTED
+==============================================================
+The one thing the seam layer surfaces that no single-archetype card can:
+invariants spanning BOTH layers. A card governs one archetype and is
+structurally blind to the other. Two recur across all four seams, which earns
+them inclusion by the corpus's own rule. They are CANDIDATES. Per HAZARD 1
+neither enters the catalog until one gate binds it end to end; until then
+this is non-enforced guidance, recorded so no one mistakes it for a gate.
+
+  single-exit-owner
+    invariant: exactly one archetype owns stage 12 / the process exit across
+      both layers.
+    why no existing control covers it: C05/C13 govern a card's OWN exit
+      mapping; neither card sees that the OTHER layer also exits. A
+      correctly-C05'd inner and a correctly-C05'd outer each pass alone while
+      colliding on the real exit code.
+    check: structural — one exit / process.exit / os.Exit / sys.exit write
+      owner across the binary (grep/AST). behavioral — the two outcome
+      classes that would collide map to distinct, asserted codes.
+    one-line test: "what fails if both layers set the exit code?"  today:
+      nothing. that is the gap.
+    BLIND SPOT (modd worked example, added v0.3): this catches COLLISION
+      (two owners) but NOT a single owner that always exits the SAME code.
+      modd has one clean exit owner whose primary path always exits 0 — it
+      PASSES this structural grep while silently reporting success on every
+      failure (its F1 defect: `modd --prep` exits 0 on a failing prep).
+      Single-ownership is NECESSARY, NOT SUFFICIENT. Promote C05-CO-REQUIRED,
+      never standalone: pair the structural single-owner grep with the
+      behavioral check "each outcome class maps to a distinct, asserted exit
+      code" (= C05). Grep catches collision; C05 catches always-same-code.
+
+  single-lock-owner
+    invariant: at most one lock owner; the inner never acquires its own lock
+      while the outer holds one.
+    why no existing control covers it: C32 ensures ONE INSTANCE per card, not
+      one lock-OWNER across layers. A C32-correct outer and a C32-correct
+      inner individually pass while together self-deadlocking or double-locking.
+    check: structural — <=1 flock / lockf / O_EXCL / lease acquisition site
+      across both layers (grep/AST). behavioral — two-instance test still one
+      winner AND the inner does not block on the outer's lock.
+    one-line test: "what fails if the inner grabs its own lock?"  today:
+      nothing until it deadlocks in prod.
+
+  promotion path (both): write ONE fusion-lint that greps exit and lock
+    acquisition sites and fails a build on >1 owner. Bind it to a real gate on
+    one real tool. Only then promote the pair to server-controls.txt (as a
+    C-pair) and attach via a new `composed_with_another_archetype` trigger on
+    the cli_* cards. Not before — an unbound invariant is literature.
+
+
+==============================================================
+HOW TO CHECK A FUSION  (the recognition procedure)
+==============================================================
+Given a tool you suspect is a fusion:
+
+  1. CLASSIFY both layers (outer/inner) against the dissection's six
+     archetypes. Wrong classification = wrong control set; load-bearing step.
+  2. ATTACH each layer's card DEFAULTS from the map (free by classification).
+  3. FIRE the forced triggers named in the present seams' seam_critical
+     blocks; attach their controls.
+  4. FLOOR_DROP: prune any attached control whose floor holds
+     (server-controls.txt). E.g. provably-single-instance + run < interval
+     drops C32.
+  5. CHECK STRUCTURAL controls now, statically, every build (grep/AST):
+     C12, C17, C33-shape, single-exit-owner, single-lock-owner.
+  6. CHECK BEHAVIORAL controls via the catalog's proof.tests BY ID — never by
+     a prose restatement here (that lies on drift). If the named test id does
+     not exist, the check FAILS (HAZARD 1 option b).
+  7. Result is a checklist of present / absent / floor-dropped, not a vibe.
+     Absent + no floor = a real gap to close or to justify on the record.
+
+
+==============================================================
+STAGE-OWNERSHIP MECHANICAL RULE (CLI)
+==============================================================
+  Edge stages (1 argv, 2 parse, 3 routing, 4 mw, 5 binding, 6 validation,
+  12 response+exit) — ONE owner: the OUTER. The outer owns argv and the
+  process exit code.
+  Core stages (9 service, 10 domain, 11 side-effect boundary) — ONE owner:
+  the INNER, including its transaction.
+  Stage 7 (authz): DROP/REMOTED almost everywhere — authz lives across the
+  wire. The web "stage 7 splits" returns only for a socket daemon authorizing
+  a local peer.
+  Stage 8 (handler): the seam itself, and per the dissection NEVER
+  load-bearing. The thin handler is where outer hands to inner; a fat handler
+  means the seam is in the wrong place.
+
+  EXCEPTION (STATE seam): stage 11 inverts to the OUTER (lock + state DB);
+  the inner's effects are sub-writes. CLI twin of the web TIME-seam exception.
+
+  Malformed-fusion check: any seam assigning the same stage — other than the
+  STATE stage-11 inversion and the rare stage-7 local split — to BOTH
+  archetypes is malformed. Two owners of stage 12 = the "weird" tool, and the
+  single-exit-owner invariant exists to catch exactly it.
+
+
+==============================================================
+RECOGNITION CHECKLIST
+==============================================================
+CHECK-ALL (CLI fusions stack), not stop-at-first-yes:
+
+  1. Inner wants the exit code, or its verdict must survive as data? -> VERDICT
+  2. Durable local state + a lock, inner mutating against it?        -> STATE
+  3. Spawns a child / remote tool whose output+exit is the contract? -> SPAWN
+  4. One invocation -> N sub-ops rejoining into one exit + report?    -> ROLLUP
+
+  None present, still >1 archetype? -> genuinely novel; design by hand
+  (route-to-human, as the web/async guides reserve).
+
+
+==============================================================
+COVERAGE — A1-A6 DECOMPOSED INTO SEAMS
+==============================================================
+  A1 terraform     STATE + ROLLUP + SPAWN
+  A2 kubectl get   SPAWN + VERDICT
+  A3 alembic       STATE
+  A4 node_exporter VERDICT  (+ LOOP note)
+  A5 k9s           VERDICT + SPAWN  (+ RACE note)
+  A6 make          ROLLUP + STATE
+Every pair is a stack of the four. The pairs are worked examples of the
+stack, not the unit of detection — the seam is.
+
+
+==============================================================
+TWO NOTES, NOT SEAMS  (kept deflated on purpose)
+==============================================================
+LOOP note (daemon-hosting a one-shot)
+  Wrapping a checker/transformer in a long-lived loop is the VERDICT seam
+  (exit -> emit) PLUS the daemon's five UNDER obligations (event transport,
+  bootstrap, health endpoint, structured logging, graceful shutdown / no
+  double-fork — dissection #6). Tell: `while true; sleep N`. The moment you
+  write it you owe all five; map control reflex: cli_daemon defaults C27/C41/
+  C47, and exposes_network_endpoint pulls the health split (C35/C48).
+
+RACE note (check-then-act across time)
+  A checker (observe) and a wrapper/remediator (act) fused — in a TUI (A5) or
+  a cron pair (B4) — observe stale state. Not a seam; a CONSTRAINT on the
+  SPAWN+VERDICT stack: re-check inside the act step, or accept the race
+  explicitly. CLI shadow of the web read_write seam, which has no standalone
+  CLI twin worth minting. Catalog gap: no control names check-to-act
+  staleness (nearest cousin C30, not a match). Record as a constraint;
+  promote on recurrence (the corpus's read_after_write precedent).
+
+
+==============================================================
+THROUGH-LINE
+==============================================================
+Every fusion has a TRANSLATION POINT where one archetype's idiom must become
+another's, and that point is where it breaks:
+    inner verdict      -> outer exit / metric / pane state   (VERDICT)
+    inner effect       -> a checkpoint in the outer's state  (STATE)
+    child exit+stdout  -> relayed or remapped, re-validated   (SPAWN)
+    N step results     -> one exit + one report per policy    (ROLLUP)
+Find the point. Name the seam. Resolve its controls by classifying both
+layers and firing its forced triggers. Check structural now, behavioral by
+test-id. Stack where more than one is present.
+
+stage_rule_in_one_line
+  Edge stages one owner (outer, who owns the exit code), core stages one
+  owner (inner, who owns the side-effect boundary); stage 7 remote, stage 8
+  the seam; the STATE seam inverts stage 11 to the outer instead of splitting.

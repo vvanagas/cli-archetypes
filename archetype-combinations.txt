@@ -1,0 +1,395 @@
+CLI ARCHETYPE COMBINATIONS — INFRA / SYSADMIN / DEVOPS
+======================================================
+Companion to CONSOLE UTILITY DESIGN reference document and
+ARCHETYPE STAGE DISSECTION.
+
+Most archetypes in production are not pure. This file catalogs the
+common combinations, in two forms:
+
+  PART A — SINGLE-TOOL FUSIONS
+           One binary, multiple archetypes layered inside it.
+           The design question: which is OUTER, which is INNER,
+           and where is the seam between them.
+
+  PART B — MULTI-TOOL COMPOSITIONS
+           Separate binaries composed at a higher layer (pipe,
+           script, CI stage). The design question: is each tool
+           ONE archetype, with composition pushed up? This is the
+           Unix-clean form — and the one with the most caveats,
+           because the seams are now between processes, not
+           functions.
+
+THE COMPOSITION RULE (from the source doc)
+  Archetypes mixed IMPLICITLY inside one tool => the tool feels
+  "weird." Mixed EXPLICITLY (each tool is one archetype,
+  composition at a higher layer) => the system feels Unix-clean.
+  That is the design test.
+
+Corollary used throughout this file:
+  In a single-tool fusion, exactly ONE archetype owns the
+  cross-cutting concerns (exit codes, locking, top-level error
+  mapping). The inner archetype(s) run as subordinate phases. If
+  two archetypes both try to own exit-code semantics or both grab
+  a lock, the tool is the "weird" kind.
+
+
+==============================================================
+PART A — SINGLE-TOOL FUSIONS
+==============================================================
+Ordered most-common-first in the ops space.
+
+
+A1. STATEFUL CLI  >  ORCHESTRATOR  >  WRAPPER
+---------------------------------------------
+Exemplar: terraform apply, pulumi up.
+Outer:    Stateful CLI  (owns state file, lock, exit codes)
+Middle:   Orchestrator  (the apply phase: dependency graph of
+                         resources, parallel where independent)
+Inner:    Wrapper       (each resource = a call to a cloud API /
+                         provider plugin)
+
+Seam placement:
+  - Stateful-CLI layer owns stages 4 (lock), 11 (side-effect
+    boundary — its state DB), and the Transaction discipline
+    (intent/completion WAL).
+  - Orchestrator layer owns stage 9 (graph executor) and 10
+    (scheduling). It runs ONLY during apply, between state-read
+    and state-write.
+  - Wrapper layer owns stage 9-inner (spawn/API call) per node.
+
+Caveats:
+  - The lock (stateful layer) must wrap the ENTIRE orchestrator
+    run, but individual resource txns (intent/completion) must NOT
+    be one big transaction. Lock is coarse; state writes are fine-
+    grained. Conflating them = the "long tx over network I/O"
+    smell at daemon scale.
+  - Exit codes are owned by the OUTER stateful layer. A single
+    failed resource (inner) becomes a partial-apply state write,
+    not a process crash. The orchestrator reports per-resource;
+    the stateful layer decides the overall code (0 / drift /
+    partial / locked).
+  - --dry-run (plan) runs orchestrator's stages 2-10 with the
+    wrapper layer STUBBED — compute the graph and diff, never
+    invoke the providers. This only works if the wrapper layer is
+    cleanly injectable (interface + impls).
+
+
+A2. WRAPPER  >  STATUS CHECKER
+------------------------------
+Exemplar: kubectl get, aws ecs describe-services, gh pr status.
+Outer:    Wrapper        (translates flags, talks to the API,
+                          owns auth/region/context)
+Inner:    Status checker (evaluates the fetched state, semantic
+                          exit / formatting)
+
+Seam placement:
+  - Wrapper owns stage 4 (client/auth setup) and 5 (flag->query
+    translation).
+  - Status-checker owns stage 10 (the evaluation rules) and 12
+    (--format json + exit codes).
+
+Caveats:
+  - This is the most common ops fusion and the one most often
+    built WRONG by collapsing the checker into the wrapper. A
+    plain `kubectl get pods` is wrapper-only (passthrough). The
+    moment you add "exit non-zero if any pod is not Ready," you
+    have added a status-checker layer — and its exit-code
+    semantics must be DESIGNED, not inherited from the API call's
+    success/failure.
+  - Two distinct failures must stay separate (the signature
+    status-checker trap, now inside a wrapper): "the API call
+    failed" (wrapper/transport) vs "the API call succeeded and the
+    thing is unhealthy" (checker/domain). 0=healthy, non-0-A=
+    unhealthy, non-0-B=couldn't reach. Don't let the wrapper's
+    transport error and the checker's verdict share an exit code.
+  - --format json is owned by the checker layer, but the RAW data
+    came from the wrapper. Decide: do you expose the API's raw
+    JSON, or the checker's evaluated JSON? Shipping both (--output
+    raw vs --output status) is common and worth the seam.
+
+
+A3. STATEFUL CLI  >  MIGRATION
+------------------------------
+Exemplar: alembic upgrade, dotnet ef database update,
+          flyway migrate.
+Outer:    Stateful CLI (owns the run-tracking table, lock, which
+                        migrations have run)
+Inner:    Migration    (each individual migration = a one-shot
+                        in-place transform of external state)
+
+Seam placement:
+  - Stateful layer owns stage 11 (its side-effect boundary: the
+    version/run-tracking table) and 4 (lock — never run two
+    migrators at once).
+  - Migration layer owns stage 9 per-migration (the actual DDL/
+    data transform) with its own idempotency and rollback hook.
+
+Caveats:
+  - Two side-effect boundaries, do not conflate: (a) the run-
+    tracking table (the stateful layer's boundary, "which
+    migrations applied") and (b) the EXTERNAL state being migrated
+    (the migration layer's boundary, the actual schema/data). The
+    classic bug is updating run-tracking BEFORE the migration's
+    side effect completes — breaks resume. WAL order: record
+    intent, apply migration, record completion.
+  - Each migration must be idempotent / "already applied" -safe,
+    because resume after a mid-run crash re-enters the partially-
+    applied one.
+  - --dry-run / --sql (print the DDL, don't execute) is the
+    migration layer's check mode. Mandatory.
+  - Rollback is the migration layer's concern; the stateful layer
+    only records direction. Irreversible migrations must declare
+    themselves so the stateful layer can refuse a down-migration
+    rather than silently corrupt.
+
+
+A4. DAEMON  >  STATUS CHECKER  (+ embedded responder)
+-----------------------------------------------------
+Exemplar: node_exporter, blackbox_exporter, custom health agents.
+Outer:    Daemon         (runs forever, owns lifecycle, bootstrap,
+                          graceful shutdown)
+Inner-1:  Status checker (each scrape = query targets, evaluate)
+Inner-2:  (tiny) responder serving /metrics or /healthz
+
+Seam placement:
+  - Daemon owns the UNDER stages: event-driven transport (scrape
+    timer + HTTP listener), bootstrap, structured logging,
+    graceful shutdown, the health endpoint itself.
+  - Status-checker runs per scrape interval: stages 10 (rules) and
+    a result it hands to the responder.
+
+Caveats:
+  - The status-checker INSIDE a daemon must never crash the
+    process. A pure status-checker CLI exits non-zero on
+    unreachable; inside a daemon, unreachable is a metric value
+    (probe_success=0), not a process exit. The exit-code instinct
+    must be SUPPRESSED — there is no exit, only an emitted metric.
+  - Per-scrape failures isolate per the daemon's error-mapping
+    rule. One bad target degrades one metric, not the agent.
+  - stdout=data inverts (daemon rule): logs go to stdout/journald;
+    the "data" (metrics) goes over the HTTP endpoint, not stdout.
+
+
+A5. TUI  >  (STATUS CHECKER + WRAPPER + REPL)
+---------------------------------------------
+Exemplar: k9s, lazygit, lazydocker.
+Outer:    TUI            (owns terminal, frame loop, key handling)
+Inner-1:  Status checker (the live data pane — pods, containers,
+                          continuously refreshed)
+Inner-2:  Wrapper        (key actions translate to kubectl/docker/
+                          git subprocess calls)
+Inner-3:  REPL           (command-mode :commands, filters)
+
+Seam placement:
+  - TUI owns stage 1 (raw keyboard), the frame renderer, UI state
+    machine.
+  - Status-checker feeds the data panes on a refresh timer.
+  - Wrapper executes on keypress (d=delete -> spawn the real CLI).
+  - REPL parses the command line (the inner ":" parser, distinct
+    from key handling).
+
+Caveats:
+  - This is the most composed common tool — four archetypes. The
+    trap is letting the wrapper layer reimplement the underlying
+    tool. lazygit must call git, not reimplement git. k9s calls
+    the k8s API but issues ACTIONS via the same paths kubectl
+    would. Fat inner-domain = the wrapper anti-pattern at TUI
+    scale.
+  - The status-checker's refresh and the wrapper's actions race:
+    you delete a pod (wrapper), the next refresh (checker) must
+    reflect it. Reconciliation is a TUI-state concern, not the
+    checker's. Don't make the checker "know" about pending
+    actions — re-fetch and let truth win.
+  - TS stack: ink (React for CLIs). Same component model as Vue —
+    the data pane is a component subscribed to the checker, the
+    action keys dispatch wrapper calls. Keeps the four archetypes
+    in separate modules instead of one fused mess.
+
+
+A6. ORCHESTRATOR  >  BUILD TOOL  (staleness-aware runner)
+---------------------------------------------------------
+Exemplar: make, bazel, turbo, nx.
+Outer:    Orchestrator (executes a dependency graph of steps)
+Inner:    Build tool   (computes WHICH steps are stale and may be
+                        skipped)
+
+Seam placement:
+  - Orchestrator owns stage 9 (execute the graph, parallelism).
+  - Build-tool logic owns the staleness computation in stage 10
+    (input hashing / mtime, cache lookup) that PRUNES the graph
+    before execution.
+
+Caveats:
+  - The line between these two is the single most-confused
+    distinction in the source doc: orchestrator RUNS the plan you
+    gave it; build tool FIGURES OUT the plan from declared deps +
+    staleness. `make` is the fusion — you declare deps (build-tool
+    nature), it prunes by mtime (build-tool), then runs the
+    survivors in order (orchestrator). A CI runner that runs every
+    step every time is orchestrator-ONLY (no build-tool layer);
+    adding cache/skip is when the build-tool layer appears.
+  - The cache (the build-tool layer's side-effect boundary, stage
+    11) is a correctness hazard: stale-cache bugs are "it works on
+    CI but not my machine." Content-addressed hashing > mtime.
+    This caveat is why people distrust incremental builds and
+    `make clean` exists.
+
+
+==============================================================
+PART B — MULTI-TOOL COMPOSITIONS
+==============================================================
+Separate binaries, composed in a pipe / script / CI stage. This
+is the Unix-clean form. More caveats than Part A because the seams
+are now between PROCESSES: the contract is bytes on a pipe + exit
+codes, with no shared types and no shared memory.
+
+GOVERNING CAVEAT FOR ALL OF PART B
+  The inter-process contract is: stdout=data, stderr=logs, exit
+  code=status. Every caveat below is a way this contract leaks.
+  The single most common production failure is a tool that ALSO
+  controls the next step via its exit code inside a pipe, where
+  the pipe HIDES that exit code (see B1). Know your shell's
+  pipefail behavior before composing anything that matters.
+
+
+B1. STATUS CHECKER | TRANSFORMER | WRAPPER
+------------------------------------------
+Exemplar: kubectl get -o json | jq '...' | kubectl apply -f -
+Pattern:  fetch state -> reshape -> act on reshaped state.
+
+Caveats:
+  - PIPEFAIL IS THE WHOLE GAME. In a default POSIX shell,
+    `false | true` exits 0 — the pipeline's exit code is the LAST
+    command's. The status-checker's non-zero verdict is SWALLOWED.
+    A checker designed to gate (exit 1 = unhealthy) is useless in
+    a naive pipe. Use `set -o pipefail` (bash/zsh) or check
+    PIPESTATUS. This single fact defeats more ops gating logic
+    than any other.
+  - The transformer (jq) failing on unexpected input is silent
+    mid-pipe unless pipefail is set. jq's own exit codes (1=no
+    output, 5=error) matter and are usually ignored.
+  - The final wrapper (kubectl apply) acts on whatever the
+    transformer emitted — if jq produced garbage (empty, partial),
+    you apply garbage. There is NO validation seam between
+    transformer-out and wrapper-in. Add one: `... | jq ... | tee
+    /tmp/x && validate /tmp/x && kubectl apply -f /tmp/x` or pull
+    the whole thing into one tool (then it's Part A, not B).
+
+
+B2. ORCHESTRATOR  calling  (WRAPPERS / CHECKERS)  per step
+----------------------------------------------------------
+Exemplar: ansible-playbook (each task shells out), CI pipelines
+          (each stage is a separate tool invocation).
+Pattern:  the orchestrator is one tool; each step it runs is a
+          separate process of some other archetype.
+
+Caveats:
+  - This is Part A's A1/A4 turned inside out: instead of one
+    binary with an inner orchestrator, the orchestrator is the
+    outer binary and the inner archetypes are EXTERNAL processes.
+    Cleaner (each step is independently testable) but the contract
+    is now exit-code + stdout parsing.
+  - The orchestrator must PARSE each step tool's output to decide
+    pass/fail/changed. If the step tool emits markdown/prose, this
+    is the markdown-as-inter-tool-format smell at the process
+    boundary. Step tools should emit structured output (JSON) or
+    at minimum honest exit codes. ansible's modules return JSON
+    for exactly this reason.
+  - "changed" vs "failed" vs "ok" needs THREE signals from a
+    two-signal channel (exit code is basically binary). Either
+    rich exit codes (the status-checker discipline: 0/1/2/3) or
+    structured stdout. Plain 0/1 cannot express idempotency.
+  - Continue-on-error vs fail-fast is the orchestrator's policy,
+    but it depends on correctly reading each step's result — which
+    loops back to the contract caveat.
+
+
+B3. GENERATOR | (human edit) | MIGRATION
+----------------------------------------
+Exemplar: alembic revision --autogenerate -> human edits the file
+          -> alembic upgrade. Or: openapi-generator -> edit ->
+          build.
+Pattern:  scaffold an artifact -> human reviews/edits -> apply it.
+
+Caveats:
+  - The HUMAN is a stage in this pipeline, and it is the only
+    stage with judgment. The generator (autogenerate) is
+    notoriously imperfect — it cannot see data migrations, only
+    schema diffs. Treating generator output as apply-ready
+    (skipping the human edit seam) is the #1 alembic footgun.
+  - The two tools share NO type contract — they share a FILE on
+    disk. The generator writes it, the human mutates it, the
+    migrator reads it. The file format is the interface, and it is
+    unversioned unless you version it. (Source doc: prompt/schema
+    versioning applies to file contracts too.)
+  - Idempotency lives in the migration tool, but the generator can
+    produce non-idempotent scaffolds. The human-edit seam exists
+    precisely to fix that. Removing the human (full automation)
+    requires the generator to be trustworthy, which for schema
+    autogen it is not.
+
+
+B4. CHECKER (cron/daemon)  ->  WRAPPER (alert/remediate)
+--------------------------------------------------------
+Exemplar: a health-check script in cron that, on failure, calls a
+          remediation wrapper (restart, page, scale).
+Pattern:  detect -> decide -> act, across a time boundary or a
+          process boundary.
+
+Caveats:
+  - The detect/act split across cron invocations means STATE must
+    live somewhere external (last-known-status file, or the
+    alerting system). Without it: flapping (alert every minute) or
+    missed recovery. This pushes the combo toward needing a
+    stateful layer it does not obviously have — the reason people
+    graduate from cron+script to a real daemon (A4) with internal
+    state.
+  - Acting on a stale check is the hazard: the checker ran 60s
+    ago, the remediation wrapper fires now, the condition already
+    cleared. Re-check inside the act step, or accept the race
+    explicitly. (Mirrors the TUI refresh/action race in A5, now
+    across processes.)
+  - The wrapper's remediation must be idempotent — cron may fire
+    the chain twice on overlapping runs (the missing-lock smell).
+    Lock the chain or make remediation safe to repeat.
+
+
+==============================================================
+COMBINATION DECISION GUIDE
+==============================================================
+
+When you find yourself building more than one archetype:
+
+  Q1: Can these be SEPARATE binaries composed in a pipe/script?
+      YES -> do that (Part B). Each tool stays one archetype,
+              testable in isolation. Pay the inter-process
+              contract tax (pipefail, structured output, exit
+              codes) CONSCIOUSLY.
+      NO  -> single tool (Part A). Proceed to Q2.
+
+  Q2: Which archetype owns the cross-cutting concerns (exit codes,
+      lock, top-level error mapping)?
+      -> That is the OUTER archetype. There must be exactly ONE.
+         Two archetypes fighting for exit-code ownership = the
+         "weird" tool.
+
+  Q3: Does the inner archetype's instinct conflict with the outer?
+      The recurring conflict: inner status-checker wants to EXIT
+      non-zero; outer daemon/TUI has no exit, only emit/render.
+      The inner instinct must be SUPPRESSED and translated to the
+      outer's idiom (metric value, UI state, per-step result).
+
+  Q4: Is there a validation seam between inner phases?
+      Especially in Part B pipes: transformer-out -> wrapper-in
+      has no type contract. Insert validation or fuse into one
+      tool. The absence of this seam is where pipes silently
+      corrupt.
+
+RECURRING CAVEAT ACROSS ALL COMBOS (the through-line)
+  Every multi-archetype tool has a point where one archetype's
+  natural exit/error idiom must be TRANSLATED into another's:
+    - checker's exit code   -> daemon's emitted metric (A4)
+    - checker's exit code   -> orchestrator's per-step result (B2)
+    - resource failure      -> stateful partial-state write (A1)
+    - pipe member's failure -> pipefail-surfaced exit code (B1)
+  Find that translation point first. It is where the combos break.

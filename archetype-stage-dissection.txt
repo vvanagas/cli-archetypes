@@ -1,0 +1,421 @@
+CLI ARCHETYPE STAGE DISSECTION — INFRA / SYSADMIN / DEVOPS
+=========================================================
+Companion to CONSOLE UTILITY DESIGN reference document.
+Each archetype mapped onto the 12-stage pipeline (Part 1).
+
+Ordered by prevalence in the infra/sysadmin/devops space,
+most-encountered first.
+
+# EDITS
+#  2026-06-30 — DAEMON (#6): UNDER marks split by daemon sub-type.
+#    Health endpoint (stage 12) and journald/structured logging
+#    (Observability) are UNDER for a SUPERVISED SERVICE daemon and
+#    FLOOR-DROP for an INTERACTIVE/FOREGROUND one (no external
+#    supervisor). The other three UNDER marks (event transport,
+#    bootstrap, graceful-shutdown/no-double-fork) apply to both.
+#    Provenance: modd fusion_dissection v1.0 (github.com/cortesi/modd,
+#    built+run) — the daemon marks over-reported false gaps on the
+#    watchexec/entr/modd family; recurrence-earned per the corpus rule.
+#    No other archetype or stage changed. fusion-seams depends_on pins
+#    (FIX1 side-effect rename, RULE1) are untouched and still hold.
+
+MARKERS
+  (none)    Load-bearing. Implement as a distinct seam.
+  OVERKILL  Exists in theory; breaking it into its own seam is
+            fusion-is-correct territory for THIS archetype's
+            common-production instance. Collapse it.
+  DROP      Genuinely absent. No analog exists for this archetype.
+  UNDER     Inverse mark (daemon only). Commonly SKIPPED in the
+            wild but MUST NOT be — under-building here is the
+            archetype's signature failure mode.
+
+PRESENT IS NOT A MODULE  (read before using the markers)
+  ----------------------------------------------------------
+  A stage appearing in the pipeline does NOT mean it becomes a
+  file, a class, or a module. A stage becomes code — a real seam
+  — only when it has at least one of:
+    - independent policy (it can change without the others)
+    - distinct failure modes (it fails in its own way)
+    - its own tests (you would test it in isolation)
+    - a swappable implementation (prod vs test vs stub)
+  A stage with none of these is a CONCEPT, not a seam. Name it in
+  the design, fuse it in the code. The 12 stages are a checklist
+  for thinking, not a directory structure.
+  ----------------------------------------------------------
+
+Baseline = common-production instance, not the toy and not the
+maximal build. A status checker WITH --format json and semantic
+exit codes; a wrapper that adds retry/auth; etc.
+
+The 12 stages, for reference:
+   1 Transport accept     7 Authorization
+   2 Parse                8 Handler
+   3 Routing              9 Application service
+   4 Pre-handler mw      10 Domain
+   5 Binding             11 Side-effect boundary
+   6 Validation          12 Response shaping
+Cross: Error mapping | Observability | Transaction scope
+
+
+==============================================================
+1. PURE TRANSFORMER          jq, yq, prettier, sed, yaml-lint
+==============================================================
+Shape: stdin -> transform -> stdout. No state, no auth, no net.
+
+   1 Transport     argv + stdin stream. Whole surface.
+   2 Parse         DOMINANT. argv->flags AND bytes->tree. Most of
+                   the work lives here for a formatter/filter.
+   3 Routing       OVERKILL. One operation, or a 3-line switch for
+                   fmt/lint/minify. Not a seam.
+   4 Middleware    OVERKILL. Maybe read .prettierrc, set stderr
+                   logger. If you're adding more, it's not pure.
+   5 Binding       DOMINANT. {indent:"2"} -> {indent:2}. Options
+                   schema (TypeBox/Zod). "Legal invocation" contract.
+  6a Invocation    Bad flags/options. --indent -3. Cheapest. Fail
+                   before reading stdin. Always present.
+  6b Parse-valid   Malformed bytes/tree — not valid JSON, not valid
+                   YAML. Owned jointly with stage 2: the parser IS
+                   the validator here. Always present.
+  6c Semantic      Input violates a SCHEMA or RULE SET. ONLY exists
+                   if the transformer has one. A YAML linter has it
+                   (that is what it is). `jq '.foo'` does NOT —
+                   missing .foo yields null, not an error. A
+                   formatter rejects parse errors (6b) but has no 6c.
+   7 Authorization DROP. No principal, nobody to authorize.
+   8 Handler       OVERKILL. ~10 lines: parse, transform, serialize,
+                   set exit. Logic here = fat-controller smell.
+   9 App service   OVERKILL. Degenerate: one pure call
+                   transform(input,opts). No tx, no coordination.
+  10 Domain        DOMINANT. THE core. The formatter / filter eval /
+                   AST rewrite. Pure. Output fully determined by
+                   input shape — if not, it's a generator (#8).
+  11 Side-effect   DROP. The only outward effect is bytes to stdout,
+                   owned by stage 12. No external state mutated, no
+                   child process, no network. Defining absence.
+  12 Response      DOMINANT. tree->bytes on stdout. Exit 0/non-0.
+                   Logs to STDERR always (else tool|jq breaks).
+  Error mapping    Load-bearing. Parse-fail vs validation-fail vs
+                   crash = distinct exit codes. Don't overload 1.
+  Observability    stderr only.
+  Transaction      DROP. No boundary, nothing to scope.
+
+Validation note: 6a and 6b are nearly free — parse failure IS the
+validation — so do NOT build a validation layer for a 40-line
+filter. A pure transformer has 6c ONLY if it is, in part, a
+validator. jq, prettier, sed have no 6c: they transform whatever
+parses. For a yaml-lint / schema checker, 6c IS the domain (stage
+10), not a separate gate. If you find yourself adding 6c to a tool
+that is not a linter, you are building a validator and did not
+notice — reclassify before writing it.
+
+Fusion note: 8+9+10 collapse to one pure transform() call. The
+three surviving seams are 2 (in), 10 (logic), 12 (out) — the OSI
+middle fuses, the I/O boundaries stay explicit.
+
+
+==============================================================
+2. STATUS CHECKER       kubectl get, aws describe-*, healthchecks
+==============================================================
+Shape: query remote -> evaluate -> semantic exit code.
+
+   1 Transport     argv + flags. Trivial.
+   2 Parse         flags only. The "input" arrives at the side-
+                   effect boundary (11) from the wire, not from
+                   stdin. Light.
+   3 Routing       OVERKILL for single-resource checkers; real for
+                   multi-resource (get pods|svc|nodes). Often a
+                   resource-type dispatch, a few lines.
+   4 Middleware    DOMINANT. Client setup: load kubeconfig / AWS
+                   creds / region / endpoint. The heavy stage. Auth
+                   *to the remote* is configured here.
+   5 Binding       Flags -> typed query (namespace, selector, ARN).
+                   Modest.
+   6 Validation    Is the selector well-formed? Region valid? Cheap
+                   pre-flight before the network call.
+   7 Authorization REMOTED. The API server / IAM enforces on the far
+                   end. You don't authorize locally; you receive 403
+                   and map it (see Error mapping). Mark: not DROP,
+                   it exists — it lives across the wire.
+   8 Handler       OVERKILL. Thin: call client, pass result to
+                   evaluator, pick exit code. Keep it lean.
+   9 App service   The query orchestration: call remote, maybe
+                   paginate, assemble. Modest but real.
+  10 Domain        DOMINANT. The evaluation RULES. healthy/degraded/
+                   red/unknown. Pure functions over the fetched
+                   state. This is what makes it a *checker* not a
+                   *getter*.
+  11 Side-effect   REMOTED. A read-only remote query crosses the
+                   boundary; no local state.
+  12 Response      DOMINANT. Two outputs: human text AND --format
+                   json (ship it, downstream tools depend on it).
+                   PLUS semantic exit codes: 0 healthy / 1 degraded
+                   / 2 red / 3 unreachable. The exit code IS the
+                   primary product.
+  Error mapping    DOMINANT. 403->exit code, timeout->unreachable,
+                   404->? Distinguish "checked, it's bad" from
+                   "couldn't check". The classic overloaded-exit bug
+                   lives here.
+  Observability    stderr. Progress/retries to stderr, verdict to
+                   stdout.
+  Transaction      DROP. Read-only query.
+
+Fusion note: 8 collapses into the 9->10->12 path. The load-bearing
+quartet is 4 (client setup), 10 (rules), 12 (formats+codes), and
+Error mapping. Distinctive trap: conflating "unreachable" with
+"unhealthy" — stage 12 and Error mapping must keep them separate.
+
+
+==============================================================
+3. WRAPPER / PROXY      aws cli, gh, kubectl, npx, custom wrappers
+==============================================================
+Shape: parse our flags -> translate -> invoke underlying tool ->
+       maybe transform output. Mostly a TRANSLATION layer.
+
+   1 Transport     argv + passthrough stdin (often piped straight
+                   to the child).
+   2 Parse         OUR flags only. Everything we don't recognize is
+                   forwarded verbatim to the wrapped tool. The
+                   parse is deliberately PARTIAL.
+   3 Routing       Subcommand -> translation strategy. Real if the
+                   wrapper covers many child commands.
+   4 Middleware    Auth injection, retry policy, cache layer — the
+                   value-add a wrapper exists to provide. Real.
+   5 Binding       DOMINANT. Our flags -> underlying tool's flags/
+                   args. THE translation. (gh pr create -> git +
+                   API calls.) Where the wrapper earns its name.
+   6 Validation    DOMINANT. Validate OUR surface before spawning.
+                   Catch bad input here, not via cryptic child-tool
+                   errors. Co-dominant with 5.
+   7 Authorization OVERKILL locally; usually the wrapped tool or its
+                   API enforces. Some wrappers add an auth shim (4)
+                   but rarely a real authz decision.
+   8 Handler       OVERKILL. Thin: translate, spawn, relay. Logic
+                   here means you're reimplementing the child.
+   9 App service   DOMINANT. Subprocess spawn + lifecycle: argv
+                   assembly, exec, wait, capture, relay exit code.
+                   The orchestration core.
+  10 Domain        OVERKILL — and a trap. A wrapper should have
+                   MINIMAL domain logic. If stage 10 grows, you're
+                   reimplementing the wrapped tool poorly (the
+                   git-pretty-log smell). Keep near-empty by design.
+  11 Side-effect   The spawned subprocess / remote API call. A
+                   local cache is optional and lives in 4.
+  12 Response      Often passthrough: relay child stdout/stderr/exit
+                   UNCHANGED. Transform only if adding ergonomics.
+                   Preserve the child's exit code unless you have
+                   reason not to — and document why.
+  Error mapping    Child exit code -> our exit code. Default:
+                   passthrough. Remap only deliberately.
+  Observability    stderr; don't pollute the relayed child streams.
+  Transaction      DROP (unless the wrapper adds its own).
+
+Fusion note: 8+10 both shrink toward nothing — that's HEALTH, not
+decay, for this archetype. Load-bearing: 5+6 (translate+validate
+our surface) and 9 (spawn+relay). The anti-pattern is a fat stage
+10; the design test for a wrapper is "how empty is my domain layer."
+
+
+==============================================================
+4. ORCHESTRATOR / RUNNER   ansible-playbook, make, CI runners
+==============================================================
+Shape: read declarative plan -> execute steps in dep order ->
+       per-step structured results + rollup.
+
+   1 Transport     argv (which playbook/target) + the plan FILE is
+                   the real input.
+   2 Parse         DOMINANT. Parse the declarative plan (YAML/TOML/
+                   Makefile/DSL) into a step graph. Heavy.
+   3 Routing       Target selection: which steps/tags/targets to
+                   run this invocation. Real.
+   4 Middleware    Inventory load, connection setup, fact gathering,
+                   global config. Substantial in ansible-class tools.
+   5 Binding       Raw plan nodes -> typed Step objects with deps,
+                   conditions, retry policy. Real.
+   6 Validation    DOMINANT. Validate the plan BEFORE executing
+                   anything. Undefined deps, cycles, unknown step
+                   types. Fail before side effects. High value.
+   7 Authorization OVERKILL in most ops runners (the operator is
+                   trusted; authz is on target systems). Real only
+                   in multi-tenant CI with per-job permissions.
+   8 Handler       OVERKILL. Thin entry into the graph executor.
+   9 App service   DOMINANT. The GRAPH EXECUTOR. Topological order,
+                   parallelism of independent steps, fail-fast vs
+                   continue-on-error, per-step retry. The heart.
+  10 Domain        DOMINANT. Scheduling logic, dependency
+                   resolution, staleness/skip decisions. Pure-ish
+                   core distinct from the executor (9).
+  11 Side-effect   Per-run state: results, logs, sometimes a cache
+                   of completed steps for --resume. Each step also
+                   crosses its own boundary by shelling out.
+  12 Response      DOMINANT. Per-step pass/fail/skip + final rollup.
+                   Machine-readable (JUnit XML, JSON) for CI
+                   ingestion is mandatory in this space.
+  Error mapping    DOMINANT. One failed step among many — overall
+                   exit code policy, which failures are fatal,
+                   how partial failure is reported. Nontrivial.
+  Observability    DOMINANT. Per-step logs, often streamed live.
+                   Operators watch this. stderr/structured both.
+  Transaction      Per-step, not global. NEVER one tx over the whole
+                   run. Idempotency per step enables --resume.
+
+Fusion note: nothing collapses cleanly — this is a genuinely
+12-stage archetype. Only 7 and 8 are overkill in the common case.
+Distinct from build tool: orchestrator RUNS the plan you gave it;
+build tool FIGURES OUT the plan from declared deps. Distinct from
+stateful CLI: user-defined workflow varies per invocation vs a
+fixed checkpointed workflow.
+
+
+==============================================================
+5. STATEFUL CLI       terraform apply, alembic, custom rotators
+==============================================================
+Shape: read state -> plan -> apply with checkpointing -> write
+       state. Highest-stakes archetype here.
+
+   1 Transport     argv + flags. The real input is EXISTING STATE
+                   (state file / state DB), read at stage 11.
+   2 Parse         flags + parse current state representation.
+   3 Routing       Subcommand: plan / apply / destroy / status.
+                   Real and meaningful.
+   4 Middleware    DOMINANT. LOCK ACQUISITION (flock, PID inside,
+                   O_CREAT|O_EXCL), signal handlers (SIGTERM ->
+                   graceful), config. Skipping the lock = corruption.
+   5 Binding       Flags + desired state -> typed plan input.
+   6 Validation    DOMINANT. Validate desired state AND current
+                   state consistency before mutating. --dry-run /
+                   --check modes live off this. Mandatory.
+   7 Authorization OVERKILL locally (operator trusted); the backend
+                   (cloud API) enforces real authz remotely.
+   8 Handler       OVERKILL. Thin entry to the workflow service.
+   9 App service   DOMINANT. The workflow: diff current vs desired,
+                   compute plan, apply step-by-step with checkpoints.
+                   WAL discipline: write INTENT before side effect,
+                   write COMPLETION after. Resumable.
+  10 Domain        DOMINANT. The diff/plan logic. Pure computation
+                   of "what must change" — separable from the
+                   applying (9).
+  11 Side-effect   DOMINANT. The STATE DB (SQLite is the sane
+                   default). Many SHORT transactions, never one long
+                   tx wrapping network I/O. Run-tracking + checkpoints.
+  12 Response      Plan output (human + machine), apply progress,
+                   final state summary. --dry-run prints plan only.
+  Error mapping    DOMINANT. Mid-apply failure is the hard case:
+                   partial state must be recorded so --resume works.
+                   Exit codes distinguish drift / error / locked.
+  Observability    Per-step progress; the audit trail matters.
+  Transaction      DOMINANT. Many short txns. Write intent, do side
+                   effect, write completion — each its own tx. The
+                   defining cross-cutting concern. Idempotent resume.
+
+Fusion note: like the orchestrator, very little is overkill — only
+7 and 8. The signature is the triad 4 (lock) + 11 (state) +
+Transaction discipline (intent/completion WAL). Migrations ARE
+stateful CLIs where the primary state is external (DB/codebase)
+and run-tracking is secondary.
+
+
+==============================================================
+6. DAEMON / AGENT     node_exporter, log collectors, systemd units
+==============================================================
+Shape: start once, run forever, respond to triggers.
+NOTE: inverse-marked. Nothing here is overkill; the failure mode
+is UNDER-building. UNDER = commonly skipped, must not be.
+SUB-TYPE (added per the modd worked example): two daemon kinds, and
+two UNDER marks split across them.
+  (i)  SERVICE daemon    — supervised by systemd/k8s, headless,
+                           long-lived. node_exporter. The external
+                           supervisor NEEDS a health endpoint and
+                           structured/journald logs.
+  (ii) INTERACTIVE daemon — foreground, in a terminal, supervised by
+                           the human watching it, dies with the
+                           session. modd, watchexec, entr. No external
+                           supervisor.
+Three UNDER marks apply to BOTH (event-driven transport, real
+bootstrap, graceful-shutdown/no-double-fork). Two apply ONLY to (i)
+and FLOOR-DROP for (ii): the health endpoint and journald logging.
+Applying (i)'s marks to a type-(ii) tool manufactures false gaps.
+
+   1 Transport     UNDER. Not argv-driven. Input is EVENTS: timer,
+                   signal, socket, inotify. People wrongly model it
+                   as a CLI that loops — that's a polling daemon,
+                   the signature anti-pattern. The event source IS
+                   the transport; design it deliberately.
+   2 Parse         Per-event parse. Light per event, runs forever.
+   3 Routing       Event TYPE -> handler. The dispatch core of an
+                   event loop. Real.
+   4 Middleware    UNDER. Heavy ONE-TIME bootstrap: config load,
+                   socket bind, resource acquisition, register
+                   signal handlers. Under-built bootstrap = fragile
+                   daemon. SIGHUP -> config reload belongs here.
+   5 Binding       Event payload -> typed event object.
+   6 Validation    Per-event; bad event => log + drop, do NOT crash
+                   the daemon. Resilience over strictness.
+   7 Authorization Depends. A socket-listening daemon may authorize
+                   peers; a metrics exporter usually doesn't.
+   8 Handler       Per-event handler. Thin dispatch to service.
+   9 App service   The per-event use case. Each event is its own
+                   mini-pipeline (2-12) inside the long-lived loop.
+  10 Domain        The actual work per event. Pure where possible.
+  11 Side-effect   State held across events: counters, buffers,
+                   connection pools. Bounded — leaks here kill a
+                   long-lived process over days.
+  12 Response      UNDER (service daemon only). HEALTH ENDPOINT for an
+                   external supervisor (systemd/k8s) is routinely
+                   forgotten. Metrics/liveness so it can supervise.
+                   FLOOR: an interactive/foreground daemon has no
+                   external supervisor — health endpoint floor-drops.
+                   Per-event output as needed.
+  Error mapping    A failed event must not take down the process.
+                   Isolate per-event failures.
+  Observability    UNDER (service daemon only). Structured logs to
+                   stdout/journald (under systemd, stdout IS the log
+                   sink — the usual stdout=data rule inverts here).
+                   Without this a SERVICE daemon is a black box. FLOOR:
+                   an interactive/foreground daemon is watched by a human
+                   at a terminal — colored human logs to stdout are
+                   correct; journald structure floor-drops.
+  Transaction      Per-event if it touches persistent state.
+  Lifecycle        UNDER. GRACEFUL SHUTDOWN on SIGTERM. Run in
+                   FOREGROUND under systemd — do NOT double-fork in
+                   the systemd age; the supervisor owns the
+                   process. Double-forking is the legacy-init
+                   anti-pattern that survives by copy-paste.
+
+Fusion note: the inverse of every other archetype. Where the
+others have stages that collapse, the daemon has stages people
+wrongly omit. The five UNDER marks (event-driven transport, real
+bootstrap, health endpoint, structured logging, graceful
+shutdown/no-double-fork) are the difference between a daemon and a
+script in a while-true loop — but see SUB-TYPE above: health
+endpoint and structured/journald logging are load-bearing ONLY for
+a supervised SERVICE daemon and floor-drop for an interactive one;
+the other three apply to both. Even under systemd these are on you;
+systemd supervises the process, it does not build the event loop,
+the health surface, or the shutdown path for you.
+
+
+==============================================================
+CROSS-ARCHETYPE SUMMARY
+==============================================================
+
+Overkill stages by archetype (collapse these):
+
+  Pure transformer   3, 4, 8, 9      (+ DROP 7, 11, tx)
+  Status checker     3, 8            (+ REMOTE 7, 11; DROP tx)
+  Wrapper            7, 8, 10        (10 = trap; keep empty)
+  Orchestrator       7, 8           (genuinely 10-stage)
+  Stateful CLI       7, 8           (genuinely 10-stage)
+  Daemon             none           (UNDER, not over)
+
+Pattern: stages 7 (authz) and 8 (handler) are overkill or remoted
+in nearly every infra/ops archetype. Authz lives on the far end of
+the wire; the handler should always be thin. If your handler is
+fat, that's the fat-controller smell regardless of archetype.
+
+Stage 8 is NEVER load-bearing in any of these six. It is always
+orchestration-only. Treat a thick handler as a defect.
+
+The archetypes that resist collapse — orchestrator, stateful CLI,
+daemon — are exactly the high-stakes ops tools. The framework earns
+its keep there. For transformer / status checker / wrapper, the
+12-stage model is vocabulary for classification, not a code layout.
