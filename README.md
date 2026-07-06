@@ -58,8 +58,22 @@ torn-write) in a green-suite, TDD-built gating tool in under ten minutes —
 ## What "archetype" means here (it is not a genre)
 
 An archetype in this corpus is a **failure-mode equivalence class**: a
-recurring tool shape that *breaks in a way nothing else does*. Two rules
-decide membership (published in the map's `archetype_inclusion` section):
+recurring tool shape that *breaks in a way nothing else does*. The
+foundational principle (from the corpus's web-side master, publication
+pending):
+
+> Two tools belong to the SAME archetype if they fail the same way.
+> Same failure mode → same discipline → same scaffolding → same review
+> checklist. When in doubt about classification, ask: *what is the
+> dominant way this can be wrong in production?* The answer is the
+> archetype.
+
+(Framework labels are NOT the unit of classification — which is why
+"REST vs gRPC" is not an archetype distinction, and why a wrapper and a
+checker that fail identically merged into one card.)
+
+Two rules decide membership (published in the map's
+`archetype_inclusion` section):
 
 - **recurrence** — the shape appears repeatedly in real systems (more than
   twice, the same bar controls must meet);
