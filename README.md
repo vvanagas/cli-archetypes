@@ -55,6 +55,40 @@ torn-write) in a green-suite, TDD-built gating tool in under ten minutes —
 | `examples/worked-audit.md` | A complete audit walkthrough: classify → grep → checklist → verdict. |
 | `skills/` | Drop-in agent instructions for Claude Code and Codex — see below. |
 
+## What "archetype" means here (it is not a genre)
+
+An archetype in this corpus is a **failure-mode equivalence class**: a
+recurring tool shape that *breaks in a way nothing else does*. Two rules
+decide membership (published in the map's `archetype_inclusion` section):
+
+- **recurrence** — the shape appears repeatedly in real systems (more than
+  twice, the same bar controls must meet);
+- **irreducibility** — its default control set cannot be expressed as a few
+  conditional triggers on an existing archetype without distorting that
+  archetype's meaning.
+
+That is why classification is the load-bearing step: an archetype is not a
+label, it is a **control-set selector**. Say "stateful CLI" and you have
+already said lock + atomic state writes + intent/completion ordering +
+resume semantics — before reading a line of code. Say "wrapper" and you
+have said the domain layer should be nearly empty, and a fat one is the
+defect.
+
+It also explains the two design moves that look odd at first glance:
+
+- **the merge** — cli_wrapper and cli_status_checker became ONE archetype
+  (cli_invoker) when their failure modes turned out to be flavors of the
+  same thing, differing by exactly one trigger (verdict branching). Same
+  failures, same archetype — however different the tools look.
+- **the daemon inversion** — the daemon is marked UNDER (what people skip)
+  where every other archetype is marked OVERKILL (what people over-build),
+  because its signature failure is under-building. The markers follow the
+  failure mode, not symmetry.
+
+Function tells you what a tool does; archetype tells you how it will
+break. The corpus classifies by the second, because that is the one you
+audit.
+
 ## Use cases
 
 1. **Audit an existing tool** (10–30 min). Run the smell greps, classify the
