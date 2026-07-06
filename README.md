@@ -48,9 +48,11 @@ notes included. When a check over- or under-reported on a real tool
 ([modd](https://github.com/cortesi/modd), zoxide), the blind spot was
 recorded in the file — those annotations are the point, not a defect.
 
-## Try it in 60 seconds — audit any CLI you own
+## Audit one CLI in 10 minutes (start here)
 
-Structural smells are greppable. From your tool's repo:
+Do this before reading any theory:
+
+1. **Run the greps** on a tool you own:
 
 ```bash
 # smell #1 — exit-code overload: how many places set the exit, and can
@@ -70,11 +72,24 @@ rg -n 'spawn|exec|subprocess' -l src/ | xargs rg -n 'split|regex|match.*stdout'
 rg -n 'while true|while True|sleep [0-9]' src/
 ```
 
-Every hit is a lead: the seams file tells you which seam it belongs to,
-which control it violates, and what the fix must guarantee. A real audit
-using exactly this procedure found two HIGH defects (smell #1 and the C33
-torn-write) in a green-suite, TDD-built gating tool in under ten minutes —
-`examples/worked-audit.md` walks the full shape.
+2. **Classify the tool** — one question: *what is the dominant way this can
+   be wrong in production?* Pick from: transformer (bad output), invoker
+   (wrong verdict about someone else's state), orchestrator (partial failure
+   misreported), stateful (corrupted state file), daemon (dies or leaks).
+3. **Map each grep hit** through the smell list at the top of
+   `archetype-fusion-seams.txt` — it names the seam and the violated control.
+4. **The only three findings to chase first** (highest frequency, highest
+   damage, cheapest fixes):
+   - **exit-code overload** — "it's broken" and "couldn't check" share a
+     code → your CI gate lies;
+   - **in-place state writes** — a kill mid-write corrupts the file your
+     tool trusts most → temp + fsync + rename;
+   - **no timeout on children** — one hung subprocess hangs you forever.
+5. **Only then** read the theory: `FOUNDATIONS.md`, then the dissection.
+
+A real audit following exactly this path found the first two of those three
+in a green-suite, TDD-built gating tool, in under ten minutes —
+`examples/worked-audit.md` is the full walkthrough.
 
 ## What's inside
 
@@ -89,6 +104,13 @@ torn-write) in a green-suite, TDD-built gating tool in under ten minutes —
 | `server-corpus-open-issues.txt` | The maintainers' falsification ledger, published deliberately: 17 open findings AGAINST the corpus itself — mis-attached controls, judgment-flip risks, plane-coupling defects, candidate controls awaiting their promotion bar. The admission discipline, visible. |
 | `examples/worked-audit.md` | A complete audit walkthrough: classify → grep → checklist → verdict. |
 | `skills/` | Drop-in agent instructions for Claude Code and Codex — see below. |
+
+**Why do files in a CLI repo say `server-`?** The catalog and the map are
+*shared* across the server and CLI planes of a larger corpus — the names
+record that origin and keep every cross-reference stable. The ledger's
+OI-12 tracks the real underlying work (splitting web/DB-coupled proofs
+from generic obligations); renaming follows that split, not the other way
+around.
 
 ## What "archetype" means here (it is not a genre)
 
@@ -176,6 +198,13 @@ paths inside if you vendor the files elsewhere).
 Both do the same thing: force *classification before code*, route the agent
 to the smell list on review and the stage dissection on design, and make it
 emit a checklist instead of an opinion.
+
+**Honesty note on the agent story:** these instructions are field-used but
+not yet *demonstrated* with a published eval — that eval (with-corpus vs
+bare-prompt, scored on control coverage against known failure signatures)
+is ledger item OI-10. Until it lands, treat the skill files as practitioner
+instructions with one published worked audit behind them, not a proven
+intervention.
 
 ## The method, in one paragraph
 
