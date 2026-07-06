@@ -185,6 +185,37 @@ floors prune what's legitimately not needed → structural controls get
 checked by grep/AST on every build, behavioral controls by named tests.
 "Detection without that second half is a vibe."
 
+## The four seams, in plain words
+
+Every multi-archetype tool breaks at a *translation point* — where one
+part's natural idiom must become another's. There are four, and they stack:
+
+| Seam | The situation | How it breaks |
+|------|---------------|---------------|
+| **VERDICT** | Part of your tool produces a verdict (healthy/broken, drifted/clean) inside a part that owns the process exit — or has no exit at all | The verdict and a transport failure end up sharing an exit code; or an inner component calls `exit()` from inside a host that should own it. "It's broken" and "couldn't check" become indistinguishable |
+| **STATE** | Something inner does mutating work while something outer owns the state file and the lock | Two locks deadlock; two state files disagree; the completion record lands *before* the effect it records; a kill mid-write leaves a torn file that defeats resume |
+| **SPAWN** | You run a child tool or call a remote API — its stdout and exit code are now both your input and your problem | No timeout on the child; regexing its human-readable output; trusting it unvalidated; your logs bleeding into what you relay |
+| **ROLLUP** | One invocation does N things whose N results must become one exit code and one report | "3 of 10 failed" has no representation in a binary exit; one failed sub-op crashes the run despite a continue-on-error intent; the partial-failure policy exists only implicitly |
+
+## The controls you'll meet first
+
+The corpus references controls by id (`C05`, `C33`, …); the catalog defines
+all 58. The handful that appear in this README, in one line each:
+
+- **C01** — anything entering from outside (child output included) is
+  validated at the boundary, not trusted
+- **C04** — when a caller must distinguish 2+ recoverable outcomes, they're
+  a typed result, not a thrown surprise
+- **C05** — each outcome class maps to a distinct, documented exit code
+- **C06** — every external call and child process has a timeout
+- **C12** — stdout carries data only; logs and progress go to stderr
+- **C17** — side effects live behind a swappable port, so `--dry-run` can
+  actually be dry and tests can stub the world
+- **C32** — things that must not run twice concurrently hold a lock (with a
+  floor: provably-single-instance tools may skip it)
+- **C33** — state files are replaced by temp-write + fsync + atomic rename,
+  never edited in place
+
 ## Known draft gaps
 
 - The web/async **seam layers** (server-web-archetype-fusions,
