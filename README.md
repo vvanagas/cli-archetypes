@@ -86,6 +86,7 @@ torn-write) in a green-suite, TDD-built gating tool in under ten minutes —
 | `server-archetype-control-map.txt` | The control map (v0.9): per-archetype cards — web AND CLI — with default / conditional / forbidden control attachments and named triggers. |
 | `server-controls.txt` | The control catalog (v0.9): every C-id with its obligation, its floor (when it may legitimately be dropped), and its behavioral proof — the engine the seams file resolves against. |
 | `FOUNDATIONS.md` | The principle, the 12 stages with full semantics, the marker system, "present is not a module", and the archetype test — distilled from the corpus into one primer. |
+| `server-corpus-open-issues.txt` | The maintainers' falsification ledger, published deliberately: 17 open findings AGAINST the corpus itself — mis-attached controls, judgment-flip risks, plane-coupling defects, candidate controls awaiting their promotion bar. The admission discipline, visible. |
 | `examples/worked-audit.md` | A complete audit walkthrough: classify → grep → checklist → verdict. |
 | `skills/` | Drop-in agent instructions for Claude Code and Codex — see below. |
 
@@ -219,9 +220,11 @@ all 58. The handful that appear in this README, in one line each:
 ## Known draft gaps
 
 - The web/async **seam layers** (server-web-archetype-fusions,
-  server-async-archetype-fusions), the **client corpus** (CL* ids), and the
-  maintainers' **open-issues ledger** are not yet published; references to
-  them are forward references.
+  server-async-archetype-fusions) and the **client corpus** (CL* ids) are
+  not yet published; references to them are forward references.
+- The **open-issues ledger** IS published (`server-corpus-open-issues.txt`)
+  — start with OI-12 if you want to see the corpus criticize itself with
+  precision.
 - Known ledger item: five controls (C08-C11, C50) are flagged as
   web/DB-plane-coupled (their proofs assume SQL transactions / outbox
   tables / endpoint flags), pending a generic-obligation / surface-proof

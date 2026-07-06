@@ -1,0 +1,331 @@
+version: 0.3
+kind: corpus_open_issues
+
+# PUBLICATION NOTE (draft): this is the maintainers' falsification ledger,
+# published deliberately — a control corpus that hides its known defects is
+# asking for trust it hasn't earned. Everything below is a real, open,
+# semantic-audit finding against the published catalog/map (and two files
+# not yet published: Web-archetype-master, the client corpus). Referenced
+# worked examples (modd, zoxide = public tools; the webhook handler, the
+# state-machine/actor CLI = internal, unpublished write-ups) ground the
+# findings empirically. Resolution protocol is in the header below:
+# append-only; resolve an item, bump the file it touches, strike it here.
+
+# Outstanding semantic-audit findings for the SERVER corpus.
+# Source: semantic pass over server-controls.txt v0.8 / server-archetype-control-map.txt v0.8.
+#   v0.2 adds OI-12..OI-16, surfaced by the CLI archetype-dissection layer
+#   (archetype-fusion-seams.txt v0.4). All five touch the SHARED catalog
+#   server-controls.txt (it carries the cli_* controls too), so they are
+#   tracked here rather than in a separate CLI ledger.
+#
+# CHANGES FROM v0.2
+#   - OI-17 appended (coverage gap: per-key ordering under consumer
+#     parallelism), surfaced 2026-07-02 while auditing C29's axis coverage
+#     during the state-machine/actor CLI worked example.
+#
+# CHANGES FROM v0.1
+#   - OI-12..OI-16 appended (CLI-dissection findings against the shared catalog).
+#   - ALREADY-APPLIED blocks added for server-controls.txt v0.9 (A1, A2) and
+#     archetype-fusion-seams.txt v0.4 (A3).
+#
+# ALREADY APPLIED in map v0.9 (not repeated below):
+#   T1  C21 -> http_command (conditional, tenant_or_user_scope)
+#   T2  C31 -> upload_streaming default; C02 -> realtime_channel default;
+#       C04 -> bff_aggregator default
+#       C01 -> scheduled_job default
+#       C04 pairing rule recorded + applied to http_crud, upload_streaming,
+#       realtime_channel
+#
+# ALREADY APPLIED in server-controls.txt v0.9 (this session):
+#   A1  C32 floor EXTENDED — lost-update-tolerant atomic-swap / last-write-wins
+#       (C33) added as a lock-avoidance case; stops the zoxide false-positive
+#       (concurrent, no lock, C33-satisfied, a dropped update costs one
+#       increment not corruption). Additive; no map or proof change.
+#   A2  C06 floor EXTENDED — supervised long-lived child (a watched dev server /
+#       REPL under a daemon or supervisor) added; an unbounded wait is correct
+#       there and the obligation redirects to C27 graceful teardown, not a
+#       timeout; stops the modd/watchexec false-positive. Additive.
+#
+# ALSO APPLIED in archetype-fusion-seams.txt v0.4 (CLI layer, this session):
+#   A3  controls_referenced manifest COMPLETED (grep-derived +C20, C30, C35,
+#       C41, C47, C48). The header claims to be the self-check manifest and was
+#       incomplete — its own HAZARD-1 (a guard that doesn't guard) turned on its
+#       header. C20 was the id hand-typing missed; the grep-diff caught it.
+#
+# Everything below is OUTSTANDING. Append-only; resolve an item, then apply with
+# a version bump on the file it touches and strike it here with the version.
+
+open_issues:
+
+  - id: OI-01
+    title: C04 pairing rule — two borderline archetypes undecided
+    severity: low
+    touches: server-archetype-control-map.txt
+    where: webhook_receiver, cli_transformer
+    finding: >
+      The C04<->C05 pairing rule (>=2 recoverable outcomes) was applied where it
+      clearly holds. Two cards are genuinely borderline and were left unchanged:
+      webhook_receiver is a thin handler (verify/dedupe/enqueue) whose outcomes
+      map via C05 at the boundary, so an internal Result union may be ceremony;
+      cli_transformer's failure is exit-code-shaped (C05 + C13), not
+      Result-union-shaped, and its "caller" is the shell.
+    options:
+      - leave both C05-only (current state)
+      - add C04 to webhook_receiver only (richer outcome set than a transformer)
+    recommendation: leave both; revisit if a real webhook handler shows a
+      recurring untyped-branching bug.
+
+  - id: OI-02
+    title: Outcome-phrased triggers should become structural predicates
+    severity: medium
+    touches: server-archetype-control-map.txt
+    where: >
+      query_read_model.recoverable_read_errors_need_branching,
+      http_command.client_needs_side_effect_free_validation,
+      <several>.correctness_depends_on_real_SQL_or_constraints,
+      (bff_aggregator.partial_failure_policy now holds only C43, same smell)
+    finding: >
+      These triggers name the OUTCOME or REQUIREMENT ("needs branching",
+      "client needs", "policy") rather than a code-observable condition. They
+      are judgment-grounded by construction and are the conditionals most
+      likely to flip run-to-run. Reword to predicates evaluable from code shape,
+      e.g.: recoverable_read_errors_need_branching -> read_has_2plus_recoverable_outcomes;
+      client_needs_side_effect_free_validation -> endpoint_exposes_dryrun_flag;
+      correctness_depends_on_real_SQL_or_constraints -> touches_locks_constraints_or_views;
+      partial_failure_policy -> (C43) downstream_timeout_fallback_required.
+    benefit: improves run-to-run consistency AND makes triggers lintable. Pairs
+      with OI-08 (structural-vs-judgment tagging).
+
+  - id: OI-03
+    title: auth_token forbids C11 (outbox) — likely too strong
+    severity: low
+    touches: server-archetype-control-map.txt
+    finding: >
+      A login emitting a security/audit event to a SIEM is a legitimate
+      external_call_after_state_change. "forbidden" forces reclassify/justify on
+      a real pattern. Soften to conditional (e.g. emits_security_event_after_auth
+      -> C11) or a note — OR keep forbidden if the design intent is that event
+      emission ALWAYS belongs to a separate command/worker.
+    decision_needed: is post-auth event emission in-archetype, or always a
+      separate worker?
+
+  - id: OI-04
+    title: Re-derive pre-existing C04 defaults against the new pairing rule
+    severity: low
+    touches: server-archetype-control-map.txt
+    finding: >
+      C04 was attached as default on http_command, auth_token, async_job_worker,
+      scheduled_job, cli_invoker, cli_orchestrator, cli_stateful, cli_daemon
+      BEFORE the pairing rule existed. Confirm each still satisfies ">=2
+      recoverable outcomes". cli_invoker is the one to check — a pure relay may
+      be C05-only.
+
+  - id: OI-05
+    title: async_job_worker — C06/C07 asymmetry and a redundant C10
+    severity: low
+    touches: server-archetype-control-map.txt
+    finding: >
+      C07 (retry) is default but C06 (timeout) only conditional on external_IO —
+      retry without a timeout is half a control. And C10 appears in BOTH the
+      default set and the correlates_messages_across_time conditional (redundant).
+      Decide: promote C06 to default (most workers do external IO) and drop the
+      redundant conditional C10.
+
+  - id: OI-06
+    title: query_read_model vs http_crud — same relation, two encodings
+    severity: low
+    touches: server-archetype-control-map.txt
+    finding: >
+      C21/C22 are default-with-floor on query_read_model but
+      conditional-with-trigger on http_crud. Same relationship, two mechanisms —
+      a maintenance smell, not a bug. Pick one encoding for "scope/sort applies
+      unless the data is global/unsorted" and use it on both.
+
+  - id: OI-07
+    title: Minor gaps — auth_token C44, cli_transformer C03
+    severity: low
+    touches: server-archetype-control-map.txt
+    finding: >
+      auth_token does not attach C44 though brute-force lockout windows are
+      duration measurements (monotonic clock). cli_transformer omits C03 though
+      the transform is often the pure-function case. Both low-stakes; confirm
+      against a real instance and attach if real.
+
+  - id: OI-08
+    title: C57 narration desync (documentation only)
+    severity: low
+    touches: server-archetype-control-map.txt, server-controls.txt
+    finding: >
+      Map header (TARGETED ATTACHMENTS) lists C57 on 4 cards; the body attaches
+      5 (adds scheduled_job). The catalog C57 changelog bullet has the same
+      omission. Operative logic (the body) is correct and complete; only the
+      human-facing narration under-reports scheduled_job. Fix both narration
+      blocks on the next bump of each file.
+
+  - id: OI-09
+    title: Structural-vs-judgment predicate tagging (design)
+    severity: design
+    finding: >
+      Tag every conditional trigger as structurally-grounded (answerable from
+      code shape — list_endpoint, holds_persistent_connections) or
+      judgment-grounded (publicly_reachable_or_abuse_plausible). Partitions the
+      "do conditionals apply consistently" question into a measurable one — the
+      run-to-run flips concentrate in the judgment-grounded predicates.
+      Structural ones become lint candidates rather than LLM-evaluated.
+
+  - id: OI-10
+    title: Consistency eval — anchor on the webhook idempotency failure
+    severity: design
+    finding: >
+      Build the with-corpus vs bare-prompt eval. Case #1: the webhook handler
+      that failed idempotency three distinct ways under bare prompting; the
+      three failure signatures are the grading rubric. N runs per arm, score
+      control-coverage variance. Then the adversarial quadrant: judgment
+      conditionals on easy-to-misclassify archetypes.
+
+  - id: OI-11
+    title: Web-archetype-master.txt is taxonomy-stale
+    severity: medium
+    touches: Web-archetype-master.txt, Web-archetype-master-for-humans.txt
+    finding: >
+      Enumerates 8 web archetypes, folds SSE/WebSocket into upload/streaming,
+      and has no realtime_channel and no scheduled_job — roughly 2 revisions
+      behind the map. Deferred from the rename session with its own bump.
+
+  # ── v0.2 additions — CLI-dissection findings against the shared catalog ──
+
+  - id: OI-12
+    title: Surface-coupled controls masquerading as generic — C08, C09, C10, C11, C50
+    severity: medium
+    touches: server-controls.txt (then downstream — map attachments + gate proof-test ids)
+    where: >
+      C08 idempotency-key, C09 short-transaction, C10 load-lock-decide-write,
+      C11 outbox-after-state-change, C50 dry-run-mutation-support
+    finding: >
+      A class, not two instances. These five were extracted from the web/DB
+      plane and never had the accident stripped — their required/proof assume
+      SQL transactions, outbox tables, and endpoint flags. A control whose
+      proof.tests assume SQL is not a generic obligation with a SQL example; it
+      is a SQL control. This is the exact INVERSE of the C35-C58 extraction
+      success, where k8s/SRE mechanisms were distilled to generic guards that
+      then caught non-k8s bugs. Surfaced empirically by the CLI dissection:
+      testing which controls transfer to file-state CLIs, only C33
+      (atomic-file-write) and C19 transfer cleanly; C08-C11 are
+      outbox/transaction-shaped and do not, and C50's dry-run is called
+      mandatory for cli_stateful yet attaches only to http_command.
+    fix: >
+      Split the generic obligation (idempotent effect; ordered effect-then-record;
+      a dry-run path exists) from the surface-specific proof (outbox-table test,
+      HTTP dryRun flag). Same daemon-sub-type template already applied to the C35
+      probe split and the cli_daemon service/foreground split — one obligation,
+      surface-specific floors and proofs.
+    blocked_on: >
+      proof-shape decision — what the generic proof asserts vs what each surface
+      binding (SQL / file-state / HTTP-flag) proves. Rewrites live required/proof
+      bodies, so not auto-applied.
+    note: >
+      Highest-value latent item. No wrong result today — it mis-transfers only
+      when the catalog is applied off its origin plane. Deliberately NOT bundled
+      with the A1/A2 floor fixes, which WERE result-changing.
+
+  - id: OI-13
+    title: New-card candidate — wrapper-fat-domain
+    severity: low
+    touches: server-controls.txt (candidate), server-archetype-control-map.txt
+    finding: >
+      SPAWN-seam failure that recurs: a wrapper reimplements its child in the
+      host's own domain layer (the gh/git, git-town-style hazard) instead of
+      relaying. Has a check shape (host stage-10 stays thin; the child owns its
+      work). Currently only hedged as "C20 adjacent" in archetype-fusion-seams.txt
+      — C20 (no-framework-fusion-for-command) is the nearest cousin but governs
+      framework fusion on a write endpoint, not child-reimplementation in a
+      wrapper, so it is not a match.
+    blocked_on: >
+      choose the proof. A LOC/complexity bound is review-only (weak); a real
+      card needs a code-observable "host does not re-derive the child's output"
+      predicate before it earns promotion.
+
+  - id: OI-14
+    title: New-card candidate — check-to-act-staleness
+    severity: low
+    touches: server-controls.txt (candidate)
+    finding: >
+      The RACE note in archetype-fusion-seams.txt: a checker (observe) fused
+      with a remediator (act) observes stale state across the observe->act gap —
+      a TUI (k9s) or a cron pair. Recurs; has a check shape (re-check inside the
+      act step, or accept the race explicitly). Nearest cousin C30
+      (reauthz-long-lived-connection) is explicitly "not a match" — C30 is about
+      credential validity outliving a connection, not read-then-write staleness.
+      CLI shadow of the web read_write seam, which has no standalone CLI twin
+      worth minting yet.
+    blocked_on: choose the proof; promote on recurrence (the read_after_write
+      precedent).
+
+  - id: OI-15
+    title: Fusion-invariant candidate — single-exit-owner (cross-layer)
+    severity: design
+    touches: >
+      server-controls.txt (candidate C-pair with OI-16),
+      server-archetype-control-map.txt (new composed_with_another_archetype trigger)
+    finding: >
+      A cross-layer invariant no single card can see: exactly one archetype owns
+      stage 12 / the process exit across both fused layers. C05/C13 govern a
+      card's OWN exit mapping; neither sees that the OTHER layer also exits, so a
+      correctly-C05'd inner and a correctly-C05'd outer each pass alone while
+      colliding on the real exit code. Full analysis — including the BLIND SPOT
+      that single-ownership is NECESSARY NOT SUFFICIENT (modd passes the
+      structural single-owner grep while exiting 0 on every failure; resolution
+      is promote C05-CO-REQUIRED, never standalone) — lives in
+      archetype-fusion-seams.txt v0.4 and is not duplicated here.
+    blocked_on: >
+      binding, not analysis. Write ONE fusion-lint (grep exit-owner sites, fail
+      the build on >1 owner) and bind it to a real gate on one real tool; only
+      then promote. An unbound invariant is literature (HAZARD-1).
+
+  - id: OI-16
+    title: Fusion-invariant candidate — single-lock-owner (cross-layer)
+    severity: design
+    touches: >
+      server-controls.txt (candidate C-pair with OI-15),
+      server-archetype-control-map.txt (new composed_with_another_archetype trigger)
+    finding: >
+      Cross-layer invariant: at most one lock owner; the inner never acquires
+      its own lock while the outer holds one. C32 ensures one INSTANCE per card,
+      not one lock-OWNER across layers, so a C32-correct outer and a C32-correct
+      inner individually pass while together self-deadlocking or double-locking.
+      Detail + promotion path in archetype-fusion-seams.txt v0.4.
+    blocked_on: >
+      the same gate-binding as OI-15 — the two share one fusion-lint. Promote the
+      pair together, not before.
+
+  # ── v0.3 addition — buffer-axis audit finding (2026-07-02) ──
+
+  - id: OI-17
+    title: Coverage gap — per-key ordering invariant under consumer parallelism
+    severity: low
+    touches: server-controls.txt (candidate), server-archetype-control-map.txt
+    finding: >
+      Queues decompose into five axes (bound, overflow policy, order,
+      producer-consumer shape, durability). The catalog deliberately legislates
+      only bound + policy (C29) — correct per the selection rule, since the
+      other axes yield trade-offs, not checkable obligations — and durability
+      routes to C07-ceiling/C11, priority to C53, PC-shape to mechanism-plane
+      default posture. The exposed gap: ordering AS AN INVARIANT. When
+      correctness depends on per-key FIFO (events for aggregate X must apply in
+      order) while competing consumers or parallel processing can reorder,
+      nothing fires. C49 covers cursor gaps, CL05 covers client-side
+      out-of-order display; "ordering guarantee violated by consumer
+      parallelism" has no owner. Recurring production shape: Kafka
+      partition-key mistakes, parallel webhook processing, chunk application
+      races (the C34/C10 aggregate case touches it but only inside one row's
+      transaction, not across the consumer topology).
+    check_shape: >
+      Exists — one of: partition/serialize by key (single consumer per key),
+      key-affine dispatch, or a re-sequencing buffer (which then needs
+      C34-style expiry for the gap that never arrives). Proof candidate:
+      out_of_order_delivery_for_same_key_applies_in_order.
+    blocked_on: >
+      recurrence — zero real slices so far; surfaced analytically (2026-07-02,
+      C29 axis-coverage audit during the state-machine/actor CLI worked
+      example), not empirically. Per the promotion rule this stays a ledger
+      line until seen twice in real slices. Do not pre-build.

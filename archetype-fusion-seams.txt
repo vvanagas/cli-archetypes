@@ -17,8 +17,9 @@ fusion_invariant_candidates: [single-exit-owner, single-lock-owner]
 # PUBLICATION NOTE (draft): both catalog dependencies are published as
 # siblings in this repository (server-archetype-control-map.txt v0.9,
 # server-controls.txt v0.9) — the depends_on pins above are satisfied.
+# The open-issues ledger is also published (server-corpus-open-issues.txt).
 # Still-unpublished cross-references (web/async seam layers, the client
-# corpus, the open-issues ledger) are noted in the siblings' own headers.
+# corpus) are noted in the siblings' own headers.
 
 # CHANGES FROM v0.3
 #  - controls_referenced COMPLETED. The header claims to be the manifest a

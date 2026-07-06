@@ -6,7 +6,8 @@ kind: control_catalog
 # server-corpus-open-issues.txt (the maintainers' falsification ledger) and
 # server-async-archetype-fusions.txt / server-web-archetype-fusions.txt
 # (the web/async seam layers) are not yet published and are forward
-# references. Known ledger item OI-12: C08-C11 and C50 are flagged as
+# references. The open-issues ledger is published as a sibling
+# (server-corpus-open-issues.txt). Known ledger item OI-12: C08-C11 and C50 are flagged as
 # web/DB-plane-coupled (their proofs assume SQL transactions / outbox
 # tables / endpoint flags), pending a generic-obligation / surface-proof
 # split; C33 and C19 transfer cleanly to file-state CLIs.
